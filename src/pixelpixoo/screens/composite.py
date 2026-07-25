@@ -99,11 +99,15 @@ class CompositeScreen:
         rects: list[tuple[int, int, int, int]],
         theme: Theme,
     ) -> None:
+        borders = self.view.show_borders
         draw = ImageDraw.Draw(img)
         for rect, tile in zip(rects, tiles):
-            paint_tile(img, rect, tile, self.cfg, theme, self._client, outline=True)
-            x, y, w, h = rect
-            draw.rectangle([x, y, x + w - 1, y + h - 1], outline=(40, 48, 58))
+            paint_tile(
+                img, rect, tile, self.cfg, theme, self._client, outline=borders
+            )
+            if borders:
+                x, y, w, h = rect
+                draw.rectangle([x, y, x + w - 1, y + h - 1], outline=(40, 48, 58))
 
     def _paint_list(
         self, img: Image.Image, tiles: list[str], theme: Theme, *, header: bool
@@ -148,6 +152,7 @@ def build_view_screens(
     layout = display.layout
     scale = display.text_scale
     header = display.show_header
+    borders = display.show_borders
 
     if layout == "focus":
         return []  # caller falls back to individual screens
@@ -160,6 +165,7 @@ def build_view_screens(
                     layout="list",
                     text_scale=scale if scale != "large" else "compact",
                     show_header=header,
+                    show_borders=borders,
                     tiles=tiles,
                 ),
                 cfg,
@@ -177,6 +183,7 @@ def build_view_screens(
                     layout="rows",
                     text_scale=scale if scale != "large" else "compact",
                     show_header=header,
+                    show_borders=borders,
                     tiles=tiles,
                     row_pattern=pattern,
                 ),
@@ -196,6 +203,7 @@ def build_view_screens(
                         layout="split_h",
                         text_scale=scale,
                         show_header=header,
+                        show_borders=borders,
                         tiles=pair,
                     ),
                     cfg,
@@ -215,6 +223,7 @@ def build_view_screens(
                         layout="grid_4",
                         text_scale=dash_scale,
                         show_header=header,
+                        show_borders=borders,
                         tiles=chunk,
                     ),
                     cfg,
