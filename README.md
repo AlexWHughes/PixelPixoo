@@ -11,6 +11,7 @@ Push-loop dashboard for a **Divoom Pixoo 64**, plus a local config web UI.
 | Sensibo | [Sensibo API v2](http://static.sensibo.com/SensiboAPI_v2.yaml) | Room temp/humidity + AC state; needs `SENSIBO_API_KEY` |
 | Next F1 | [Jolpica](https://api.jolpi.ca/) | No API key |
 | Countdown | Config dates | One slide per target |
+| Bin night | Config weekly schedule | Conditional tile — only when put-out is within `lead_days` |
 
 ## Quick start (local Docker)
 
@@ -27,7 +28,7 @@ Without `docker-compose.local.yml`, Compose uses named volumes and seeds `config
 
 Web UI features:
 - Device IP, brightness, rotate interval, preview vs live push
-- Weather / traffic routes / Sensibo pins / F1 / countdowns
+- Weather / traffic routes / Sensibo pins / F1 / countdowns / bin night
 - Masked secrets (paste to replace; clear checkbox to wipe)
 - Sensibo discover + pin
 - Pixoo connection test
@@ -49,6 +50,8 @@ Web UI features:
 |--------|------|---------|
 | GET | `/api/status` | Loop health |
 | GET/PUT | `/api/config` | Read/write config (secrets masked on GET) |
+| GET | `/api/config/export` | Download full JSON backup (includes API keys) |
+| POST | `/api/config/import` | Replace config from export JSON |
 | POST | `/api/reload` | Reload loop |
 | POST | `/api/pixoo/test` | Ping device |
 | GET | `/api/sensibo/discover` | List pods |

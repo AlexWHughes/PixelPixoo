@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 from pixelpixoo.config import AppConfig, ViewConfig
 from pixelpixoo.renderer import BLACK, CYAN, draw_label_bar, error_frame, new_canvas
 from pixelpixoo.theme import Theme, layout_rects, row_pattern_rects, theme_for
-from pixelpixoo.widgets import default_tiles, paint_tile
+from pixelpixoo.widgets import default_tiles, paint_tile, visible_tiles
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class CompositeScreen:
     def _paint(self) -> Image.Image:
         theme = theme_for(self.view.text_scale)
         img = new_canvas(BLACK)
-        tiles = self.view.tiles or default_tiles(self.cfg)
+        tiles = visible_tiles(self.cfg, self.view.tiles or default_tiles(self.cfg))
         if not tiles:
             draw_label_bar(img, self.view.name.upper()[:10], CYAN, height=theme.header_h)
             return img
@@ -145,7 +145,7 @@ def build_view_screens(
             screens.append(CompositeScreen(view, cfg, client=http))
         return screens
 
-    tiles = display.tiles or default_tiles(cfg)
+    tiles = visible_tiles(cfg, display.tiles or default_tiles(cfg))
     if not tiles:
         return []
 

@@ -52,6 +52,25 @@ countdown:
   - label: "HOL"
     at: "2026-12-20T00:00:00+10:00"
 
+# Kerbside bins — tile id `bins` (hidden when nothing is due within lead_days)
+bins:
+  enabled: true
+  timezone: "Australia/Melbourne"
+  lead_days: 1          # 0 = tonight only; 1 = tonight + tomorrow
+  eve_before: true      # TONIGHT = evening before collection morning
+  streams:
+    - label: LANDFILL
+      weekday: wed      # collection day
+      every_weeks: 1
+    - label: RECYCLE
+      weekday: wed
+      every_weeks: 2
+      anchor: "2026-07-22"  # a known recycle collection date (Wed)
+    - label: GREEN
+      weekday: wed
+      every_weeks: 2
+      anchor: "2026-07-29"  # opposite fortnight to recycle
+
 schedule:
   enabled: false
   timezone: "Australia/Sydney"

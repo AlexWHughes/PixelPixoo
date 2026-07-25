@@ -45,13 +45,32 @@ class RouteEta:
     duration_traffic_min: int
     duration_min: int
     summary: str
+    avg_traffic_min: int | None = None
 
 
 _route_cache: dict[str, tuple[float, RouteEta]] = {}
+# Rolling travel-time history per route (samples from successful API refreshes)
+_AVG_WINDOW = 16
+_AVG_MIN_SAMPLES = 3
+_traffic_history: dict[str, list[int]] = {}
 
 
 def _cache_key(route: TrafficRoute) -> str:
     return f"{route.name}|{route.origin}|{route.destination}"
+
+
+def _rolling_avg_min(key: str) -> int | None:
+    hist = _traffic_history.get(key) or []
+    if len(hist) < _AVG_MIN_SAMPLES:
+        return None
+    return max(1, round(sum(hist) / len(hist)))
+
+
+def _record_traffic_sample(key: str, traffic_min: int) -> None:
+    hist = _traffic_history.setdefault(key, [])
+    hist.append(max(1, int(traffic_min)))
+    if len(hist) > _AVG_WINDOW:
+        del hist[:-_AVG_WINDOW]
 
 
 def _traffic_ttl_seconds(tz_name: str = _DEFAULT_TZ) -> float:
@@ -102,26 +121,40 @@ def _fetch_route(
     else:
         traffic = duration
     summary = str(payload["routes"][0].get("summary", ""))
+    traffic_min = max(1, round(traffic / 60))
+    # Compare against prior samples only, then record this refresh
+    avg_min = _rolling_avg_min(key)
     eta = RouteEta(
         name=route.name,
-        duration_traffic_min=max(1, round(traffic / 60)),
+        duration_traffic_min=traffic_min,
         duration_min=max(1, round(duration / 60)),
         summary=summary,
+        avg_traffic_min=avg_min,
     )
+    _record_traffic_sample(key, traffic_min)
     _route_cache[key] = (time.monotonic(), eta)
     logger.debug(
-        "Traffic refresh %s → %sm (ttl %.0fs)",
+        "Traffic refresh %s → %sm (avg %s, ttl %.0fs)",
         route.name,
         eta.duration_traffic_min,
+        eta.avg_traffic_min,
         ttl,
     )
     return eta
 
 
-def _eta_color(traffic_min: int, base_min: int) -> tuple[int, int, int]:
-    if traffic_min <= base_min + 2:
+def _eta_baseline(eta: RouteEta) -> int:
+    """Prefer rolling cached average; fall back to Google typical duration."""
+    if eta.avg_traffic_min is not None:
+        return eta.avg_traffic_min
+    return eta.duration_min
+
+
+def _eta_color(traffic_min: int, baseline_min: int) -> tuple[int, int, int]:
+    """Green when near/below baseline; warmer as delay grows."""
+    if traffic_min <= baseline_min + 2:
         return GREEN
-    if traffic_min <= base_min + 10:
+    if traffic_min <= baseline_min + 8:
         return ORANGE
     return RED
 
@@ -186,7 +219,8 @@ class TrafficScreen:
         y += t.body_h + t.line_gap
 
         minutes = f"{eta.duration_traffic_min}M"
-        color = _eta_color(eta.duration_traffic_min, eta.duration_min)
+        baseline = _eta_baseline(eta)
+        color = _eta_color(eta.duration_traffic_min, baseline)
         scale = fit_scale(minutes, 60, prefer=t.hero, tiny=t.use_tiny_font)
         draw_centered(
             img,
@@ -199,8 +233,9 @@ class TrafficScreen:
         )
         y += (7 * scale if not t.use_tiny_font else 5) + t.line_gap
 
-        delay = eta.duration_traffic_min - eta.duration_min
-        note = f"+{delay}M VS TYP" if delay > 0 else "ON TIME"
+        delay = eta.duration_traffic_min - baseline
+        vs = "AVG" if eta.avg_traffic_min is not None else "TYP"
+        note = f"+{delay}M VS {vs}" if delay > 0 else "ON TIME"
         note_color = ORANGE if delay > 0 else GREEN
         if y + t.body_h <= 54:
             draw_centered(
