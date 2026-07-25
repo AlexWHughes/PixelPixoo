@@ -24,6 +24,9 @@
         <span class="dot"></span>
         <span id="runLabel">…</span>
       </div>
+      <button type="button" class="btn ghost" id="btnExportConfig" title="Download full config JSON (includes API keys)">Export</button>
+      <button type="button" class="btn ghost" id="btnImportConfig" title="Replace config from a JSON backup">Import</button>
+      <input type="file" id="importConfigFile" accept="application/json,.json" hidden />
       <button type="button" class="btn ghost" id="btnReload">Reload loop</button>
       <button type="button" class="btn primary" id="btnSave">Save &amp; apply</button>
     </div>
@@ -399,9 +402,36 @@
           <div id="countdownList" class="stack"></div>
         </section>
 
+        <section class="panel" id="sec-bins">
+          <div class="panel-head">
+            <h2>Bin night</h2>
+            <button type="button" class="btn tiny" id="btnAddBin">Add stream</button>
+          </div>
+          <p class="hint">Weekly / fortnightly kerbside schedule. Tile shows only when put-out is within <em>lead days</em> (tonight / tomorrow). Collection day is morning pickup; with “eve before” (default) the Pixoo says TONIGHT on the evening you put bins out.</p>
+          <div class="fields three">
+            <label class="check">
+              <input type="checkbox" name="bins_enabled" />
+              <span>Enable bin night</span>
+            </label>
+            <label>
+              <span>Timezone</span>
+              <input name="bins_timezone" placeholder="Australia/Melbourne" />
+            </label>
+            <label>
+              <span>Lead days <em id="binsLeadVal">1</em></span>
+              <input name="bins_lead_days" type="range" min="0" max="3" value="1" />
+            </label>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="bins_eve_before" checked />
+            <span>Put bins out the evening before collection <small>Australian bin night</small></span>
+          </label>
+          <div id="binsList" class="stack"></div>
+        </section>
+
         <footer class="form-foot">
           <button type="submit" class="btn primary wide">Save &amp; apply</button>
-          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads the push loop without restarting the container.</p>
+          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads the push loop without restarting the container. Use <strong>Export</strong> / <strong>Import</strong> in the header for a full JSON backup (includes API keys).</p>
         </footer>
       </form>
     </div>
@@ -432,6 +462,33 @@
         <span>When</span>
         <input data-f="at" type="datetime-local" step="60" />
       </label>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <template id="tplBin">
+    <div class="card-row bin-row">
+      <label><span>Label</span><input data-f="label" maxlength="12" placeholder="LANDFILL" /></label>
+      <label>
+        <span>Collection day</span>
+        <select data-f="weekday">
+          <option value="mon">Mon</option>
+          <option value="tue">Tue</option>
+          <option value="wed">Wed</option>
+          <option value="thu">Thu</option>
+          <option value="fri">Fri</option>
+          <option value="sat">Sat</option>
+          <option value="sun">Sun</option>
+        </select>
+      </label>
+      <label>
+        <span>Every</span>
+        <select data-f="every_weeks">
+          <option value="1">Weekly</option>
+          <option value="2">Fortnightly</option>
+        </select>
+      </label>
+      <label class="grow"><span>Anchor date <small>known collection day for fortnightly</small></span><input data-f="anchor" type="date" /></label>
       <button type="button" class="btn tiny danger" data-remove>Remove</button>
     </div>
   </template>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +19,27 @@ from pixelpixoo.config import (
     load_config,
 )
 from pixelpixoo.schedule import schedule_public_dict
+from pixelpixoo.screens.bins import LABEL_MAX as BIN_LABEL_MAX
 
 logger = logging.getLogger(__name__)
 
+_WEEKDAY_YAML = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
 SECRET_KEYS = ("PIXOO_IP", "GOOGLE_MAPS_API_KEY", "SENSIBO_API_KEY", "PIXELPIXOO_PREVIEW")
+EXPORT_FORMAT = "pixelpixoo-config"
+EXPORT_VERSION = 1
+_IMPORT_DROP_KEYS = frozenset(
+    {
+        "tile_options",
+        "google_maps_api_key_set",
+        "google_maps_api_key_hint",
+        "sensibo_api_key_set",
+        "sensibo_api_key_hint",
+        "session_options",
+        "clear_google_maps_api_key",
+        "clear_sensibo_api_key",
+    }
+)
 
 
 def config_path() -> Path:
@@ -221,6 +239,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
         "sensibo_api_key_set": bool(sensibo),
         "sensibo_api_key_hint": mask_secret(sensibo),
         "countdown": [{"label": c.label, "at": c.at} for c in loaded.countdown],
+        "bins": _bins_public(loaded, raw),
         "display": {
             "text_scale": loaded.display.text_scale,
             "layout": loaded.display.layout,
@@ -246,6 +265,124 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
     }
 
 
+def export_config_bundle() -> dict[str, Any]:
+    """Full portable backup for download (includes raw secrets)."""
+    pub = public_config_dict()
+    env = read_env_file()
+    google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
+    sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
+
+    f1 = dict(pub.get("f1") or {})
+    f1.pop("session_options", None)
+
+    config: dict[str, Any] = {
+        "pixoo_ip": pub.get("pixoo_ip", ""),
+        "rotate_seconds": pub.get("rotate_seconds", 18),
+        "brightness": pub.get("brightness", 80),
+        "preview_mode": bool(pub.get("preview_mode")),
+        "preview_dir": pub.get("preview_dir") or "/preview",
+        "enable_f1": bool(pub.get("enable_f1", True)),
+        "f1": f1,
+        "weather": pub.get("weather") or {},
+        "traffic": pub.get("traffic") or {},
+        "sensibo": pub.get("sensibo") or {},
+        "countdown": pub.get("countdown") or [],
+        "bins": pub.get("bins") or {},
+        "display": pub.get("display") or {},
+        "views": pub.get("views") or [],
+        "schedule": pub.get("schedule") or {},
+        "google_maps_api_key": google,
+        "sensibo_api_key": sensibo,
+    }
+    return {
+        "format": EXPORT_FORMAT,
+        "version": EXPORT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "config": config,
+    }
+
+
+def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
+    """Accept a bundle or a raw UI-shaped config object."""
+    if not isinstance(body, dict):
+        raise ValueError("Import payload must be a JSON object")
+
+    if body.get("format") == EXPORT_FORMAT:
+        config = body.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("Bundle missing config object")
+        payload = dict(config)
+    elif "config" in body and isinstance(body.get("config"), dict) and "pixoo_ip" not in body:
+        payload = dict(body["config"])
+    else:
+        payload = dict(body)
+
+    for key in _IMPORT_DROP_KEYS:
+        payload.pop(key, None)
+
+    f1 = payload.get("f1")
+    if isinstance(f1, dict):
+        f1 = dict(f1)
+        f1.pop("session_options", None)
+        payload["f1"] = f1
+
+    # Full replace for secrets when keys are present (empty ⇒ clear)
+    if "google_maps_api_key" in payload:
+        key = payload.get("google_maps_api_key")
+        if not (isinstance(key, str) and key.strip() and not str(key).startswith("••••")):
+            payload["clear_google_maps_api_key"] = True
+            payload["google_maps_api_key"] = ""
+    if "sensibo_api_key" in payload:
+        key = payload.get("sensibo_api_key")
+        if not (isinstance(key, str) and key.strip() and not str(key).startswith("••••")):
+            payload["clear_sensibo_api_key"] = True
+            payload["sensibo_api_key"] = ""
+
+    if not str(payload.get("pixoo_ip", "")).strip():
+        raise ValueError("Import config requires pixoo_ip")
+    return payload
+
+
+def _bins_public(loaded: AppConfig, raw: dict[str, Any]) -> dict[str, Any]:
+    bins_raw = raw.get("bins") if isinstance(raw.get("bins"), dict) else {}
+    if loaded.bins:
+        streams = [
+            {
+                "label": s.label,
+                "weekday": _WEEKDAY_YAML[s.weekday],
+                "every_weeks": s.every_weeks,
+                "anchor": s.anchor,
+            }
+            for s in loaded.bins.streams
+        ]
+        return {
+            "enabled": True,
+            "timezone": loaded.bins.timezone,
+            "lead_days": loaded.bins.lead_days,
+            "eve_before": loaded.bins.eve_before,
+            "streams": streams,
+        }
+    streams = []
+    for item in bins_raw.get("streams") or []:
+        if not isinstance(item, dict):
+            continue
+        streams.append(
+            {
+                "label": str(item.get("label", ""))[:BIN_LABEL_MAX],
+                "weekday": str(item.get("weekday", item.get("day", "wed"))),
+                "every_weeks": int(item.get("every_weeks", item.get("every", 1)) or 1),
+                "anchor": str(item.get("anchor", "") or ""),
+            }
+        )
+    return {
+        "enabled": bool(bins_raw.get("enabled", False)),
+        "timezone": str(bins_raw.get("timezone", "Australia/Melbourne")),
+        "lead_days": int(bins_raw.get("lead_days", 1)),
+        "eve_before": bool(bins_raw.get("eve_before", True)),
+        "streams": streams,
+    }
+
+
 def _tile_options(
     loaded: AppConfig,
     sensibo_devices: list[dict[str, str]],
@@ -255,6 +392,8 @@ def _tile_options(
     options: list[dict[str, str]] = []
     if loaded.weather:
         options.append({"id": "weather", "label": "Weather"})
+    if loaded.bins:
+        options.append({"id": "bins", "label": "Bin night (conditional)"})
     if loaded.sensibo or sensibo_devices:
         options.append({"id": "sensibo", "label": "Sensibo (first)"})
         for d in sensibo_devices:
@@ -276,6 +415,7 @@ def _tile_options(
     # Always offer base ids so users can pre-select before enabling screens
     base = [
         ("weather", "Weather"),
+        ("bins", "Bin night"),
         ("sensibo", "Sensibo"),
         ("traffic", "Traffic"),
         ("f1", "Next F1"),
@@ -391,6 +531,33 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         if label and at:
             countdown.append({"label": label, "at": at})
     yaml_data["countdown"] = countdown
+
+    bins = payload.get("bins") or {}
+    bin_streams = []
+    for item in bins.get("streams") or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "")).strip().upper()[:BIN_LABEL_MAX]
+        weekday = str(item.get("weekday", item.get("day", ""))).strip().lower()
+        if not label or not weekday:
+            continue
+        every = max(1, min(8, int(item.get("every_weeks", item.get("every", 1)) or 1)))
+        anchor = str(item.get("anchor", "") or "").strip()[:10]
+        entry: dict[str, Any] = {
+            "label": label,
+            "weekday": weekday,
+            "every_weeks": every,
+        }
+        if anchor:
+            entry["anchor"] = anchor
+        bin_streams.append(entry)
+    yaml_data["bins"] = {
+        "enabled": bool(bins.get("enabled", True)) and bool(bin_streams),
+        "timezone": str(bins.get("timezone", "Australia/Melbourne")),
+        "lead_days": max(0, min(6, int(bins.get("lead_days", 1)))),
+        "eve_before": bool(bins.get("eve_before", True)),
+        "streams": bin_streams,
+    }
 
     display = payload.get("display") or {}
     tiles = [

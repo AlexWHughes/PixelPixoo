@@ -117,6 +117,28 @@ function readCountdowns() {
     .filter((item) => item.label && item.at);
 }
 
+function addBinRow(values = {}) {
+  const node = $("#tplBin").content.firstElementChild.cloneNode(true);
+  node.querySelector('[data-f="label"]').value = values.label || "";
+  node.querySelector('[data-f="weekday"]').value = (values.weekday || "wed").toLowerCase();
+  node.querySelector('[data-f="every_weeks"]').value = String(values.every_weeks || 1);
+  node.querySelector('[data-f="anchor"]').value = (values.anchor || "").slice(0, 10);
+  node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
+  $("#binsList").appendChild(node);
+  return node;
+}
+
+function readBins() {
+  return $$("#binsList .bin-row")
+    .map((row) => ({
+      label: row.querySelector('[data-f="label"]')?.value.trim() || "",
+      weekday: row.querySelector('[data-f="weekday"]')?.value || "wed",
+      every_weeks: Number(row.querySelector('[data-f="every_weeks"]')?.value || 1),
+      anchor: row.querySelector('[data-f="anchor"]')?.value || "",
+    }))
+    .filter((item) => item.label && item.weekday);
+}
+
 function readRows(listId, fields) {
   return $$(`${listId} .card-row`).map((row) => {
     const obj = {};
@@ -337,6 +359,16 @@ function fillConfig(cfg) {
     addCountdownRow(item);
   }
 
+  form.bins_enabled.checked = !!cfg.bins?.enabled;
+  form.bins_timezone.value = cfg.bins?.timezone || "Australia/Melbourne";
+  form.bins_lead_days.value = cfg.bins?.lead_days ?? 1;
+  form.bins_eve_before.checked = cfg.bins?.eve_before !== false;
+  $("#binsList").innerHTML = "";
+  for (const stream of cfg.bins?.streams || []) {
+    addBinRow(stream);
+  }
+  bindRange("bins_lead_days", "#binsLeadVal");
+
   bindRange("brightness", "#brightnessVal");
   bindRange("rotate_seconds", "#rotateVal");
   toggleSections();
@@ -346,6 +378,7 @@ function toggleSections() {
   $(".weather-fields").style.opacity = form.weather_enabled.checked ? "1" : "0.45";
   $("#routesList").style.opacity = form.traffic_enabled.checked ? "1" : "0.45";
   $("#sensiboList").style.opacity = form.sensibo_enabled.checked ? "1" : "0.45";
+  $("#binsList").style.opacity = form.bins_enabled.checked ? "1" : "0.45";
 }
 
 function collectPayload() {
@@ -408,6 +441,13 @@ function collectPayload() {
     sensibo_api_key: form.sensibo_api_key.value,
     clear_sensibo_api_key: form.clear_sensibo_api_key.checked,
     countdown: readCountdowns(),
+    bins: {
+      enabled: form.bins_enabled.checked,
+      timezone: form.bins_timezone.value.trim() || "Australia/Melbourne",
+      lead_days: Number(form.bins_lead_days.value),
+      eve_before: form.bins_eve_before.checked,
+      streams: readBins(),
+    },
     schedule: {
       enabled: form.schedule_enabled.checked,
       timezone: form.schedule_timezone.value.trim() || "Australia/Sydney",
@@ -516,6 +556,61 @@ async function saveConfig(event) {
     const cfg = await api("/api/config");
     fillConfig(cfg);
     await refreshStatus();
+  } catch (err) {
+    showToast(err.message || String(err), false);
+  }
+}
+
+async function exportConfig() {
+  try {
+    const res = await fetch("/api/config/export");
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || res.statusText);
+    }
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pixelpixoo-config-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast("Exported full config (includes API keys)", true);
+  } catch (err) {
+    showToast(err.message || String(err), false);
+  }
+}
+
+function importConfig() {
+  $("#importConfigFile").click();
+}
+
+async function onImportFileSelected(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  const ok = window.confirm(
+    `Import “${file.name}”? This replaces the current config and any API keys in the file.`
+  );
+  if (!ok) return;
+  try {
+    const text = await file.text();
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("File is not valid JSON");
+    }
+    const result = await api("/api/config/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    fillConfig(result.config || (await api("/api/config")));
+    await refreshStatus();
+    showToast("Imported. Push loop reloading…", true);
   } catch (err) {
     showToast(err.message || String(err), false);
   }
@@ -717,12 +812,15 @@ function wireUi() {
     tomorrow.setHours(9, 0, 0, 0);
     addCountdownRow({ label: "", at: tomorrow.toISOString() });
   });
+  $("#btnAddBin").addEventListener("click", () => {
+    addBinRow({ label: "LANDFILL", weekday: "wed", every_weeks: 1 });
+  });
   $("#btnAddView").addEventListener("click", () =>
     addViewRow({
       name: "HOME",
       layout: "rows",
       text_scale: "tiny",
-      tiles: ["weather", "sensibo", "f1", "countdown"],
+      tiles: ["weather", "bins", "sensibo", "f1", "countdown"],
       row_pattern: [1, 1, 1, 2],
     })
   );
@@ -756,6 +854,9 @@ function wireUi() {
   });
   $("#btnSave").addEventListener("click", saveConfig);
   form.addEventListener("submit", saveConfig);
+  $("#btnExportConfig").addEventListener("click", exportConfig);
+  $("#btnImportConfig").addEventListener("click", importConfig);
+  $("#importConfigFile").addEventListener("change", onImportFileSelected);
   $("#btnReload").addEventListener("click", async () => {
     try {
       await api("/api/reload", { method: "POST", body: "{}" });
@@ -771,6 +872,7 @@ function wireUi() {
   form.weather_enabled.addEventListener("change", toggleSections);
   form.traffic_enabled.addEventListener("change", toggleSections);
   form.sensibo_enabled.addEventListener("change", toggleSections);
+  form.bins_enabled.addEventListener("change", toggleSections);
 }
 
 async function boot() {

@@ -11,6 +11,8 @@ from typing import Any
 import yaml
 
 from pixelpixoo.schedule import ScheduleConfig, parse_schedule
+from pixelpixoo.screens.bins import LABEL_MAX as BIN_LABEL_MAX
+from pixelpixoo.screens.bins import _parse_anchor, parse_weekday
 from pixelpixoo.theme import coerce_layout, coerce_text_scale, coerce_view_layout
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,25 @@ class TrafficConfig:
 class CountdownTarget:
     label: str
     at: str
+
+
+@dataclass
+class BinStream:
+    label: str
+    weekday: int  # collection day, 0=Mon .. 6=Sun
+    every_weeks: int = 1
+    anchor: str = ""  # ISO collection date for fortnightly alignment
+
+
+@dataclass
+class BinsConfig:
+    enabled: bool = True
+    timezone: str = "Australia/Melbourne"
+    # Show tile when put-out is within this many days (0=tonight only).
+    lead_days: int = 1
+    # True = Australian "bin night": put bins out the evening before collection.
+    eve_before: bool = True
+    streams: list[BinStream] = field(default_factory=list)
 
 
 @dataclass
@@ -124,6 +145,7 @@ class AppConfig:
     weather: WeatherConfig | None = None
     traffic: TrafficConfig | None = None
     countdown: list[CountdownTarget] = field(default_factory=list)
+    bins: BinsConfig | None = None
     enable_f1: bool = True
     f1: F1Config = field(default_factory=F1Config)
     sensibo: SensiboConfig | None = None
@@ -203,6 +225,55 @@ def _parse_f1(raw: dict[str, Any] | None, enable_f1: bool) -> F1Config:
     )
 
 
+def _parse_bins(raw: object) -> BinsConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("enabled") is False:
+        return None
+    streams: list[BinStream] = []
+    for item in raw.get("streams") or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "")).strip().upper()[:BIN_LABEL_MAX]
+        weekday = parse_weekday(item.get("weekday", item.get("day")))
+        if not label or weekday is None:
+            continue
+        every = int(item.get("every_weeks", item.get("every", 1)) or 1)
+        every = max(1, min(8, every))
+        anchor = str(item.get("anchor", "") or "").strip()
+        if every > 1 and not _parse_anchor(anchor):
+            logger.warning(
+                "bins stream %s is fortnightly but anchor date is missing/invalid; "
+                "treating as weekly until set",
+                label,
+            )
+            every = 1
+        streams.append(
+            BinStream(
+                label=label,
+                weekday=weekday,
+                every_weeks=every,
+                anchor=anchor[:10] if anchor else "",
+            )
+        )
+    if not streams:
+        return None
+    lead = int(raw.get("lead_days", 1))
+    lead = max(0, min(6, lead))
+    eve = raw.get("eve_before", True)
+    if isinstance(eve, str):
+        eve = eve.strip().lower() not in ("0", "false", "no", "morning")
+    return BinsConfig(
+        enabled=True,
+        timezone=str(raw.get("timezone", "Australia/Melbourne")),
+        lead_days=lead,
+        eve_before=bool(eve),
+        streams=streams,
+    )
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     config_path = Path(path or os.environ.get("PIXELPIXOO_CONFIG", "config.yaml"))
     if not config_path.is_file():
@@ -270,6 +341,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                     label=str(item["label"])[:COUNTDOWN_LABEL_MAX], at=str(item["at"])
                 )
             )
+
+    bins = _parse_bins(raw.get("bins"))
 
     sensibo: SensiboConfig | None = None
     sensibo_raw = raw.get("sensibo")
@@ -352,6 +425,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         weather=weather,
         traffic=traffic,
         countdown=countdown,
+        bins=bins,
         enable_f1=f1.enabled,
         f1=f1,
         sensibo=sensibo,

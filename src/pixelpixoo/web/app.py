@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from pixelpixoo.persist import apply_config_payload, public_config_dict
+from pixelpixoo.persist import (
+    apply_config_payload,
+    export_config_bundle,
+    normalize_import_payload,
+    public_config_dict,
+)
 from pixelpixoo.runtime import runtime
 from pixelpixoo.screens.sensibo import discover_pods
 
@@ -47,6 +54,33 @@ def status() -> dict[str, Any]:
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
     return public_config_dict()
+
+
+@app.get("/api/config/export")
+def export_config() -> Response:
+    """Download full config JSON (includes API keys)."""
+    bundle = export_config_bundle()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    body = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="pixelpixoo-config-{stamp}.json"'
+        },
+    )
+
+
+@app.post("/api/config/import")
+def import_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Replace config from an export bundle or raw config object."""
+    try:
+        normalized = normalize_import_payload(payload)
+        cfg = apply_config_payload(normalized)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    runtime.request_reload(cfg)
+    return {"ok": True, "config": public_config_dict(cfg), "status": runtime.status_dict()}
 
 
 @app.put("/api/config")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -24,6 +23,13 @@ from pixelpixoo.renderer import (
     fit_scale,
     text_width,
 )
+from pixelpixoo.screens.bins import BinDue
+from pixelpixoo.screens.bins import (
+    _parse_anchor,
+    format_bin_lines,
+    local_today,
+    upcoming_dues,
+)
 from pixelpixoo.screens.countdown import _format_remaining, _parse_target
 from pixelpixoo.screens.f1 import (
     _countdown,
@@ -33,7 +39,7 @@ from pixelpixoo.screens.f1 import (
 )
 from pixelpixoo.screens.f1 import _fetch as _fetch_f1
 from pixelpixoo.screens.sensibo import fetch_snapshot, resolve_devices
-from pixelpixoo.screens.traffic import _eta_color, _fetch_route
+from pixelpixoo.screens.traffic import _eta_baseline, _eta_color, _fetch_route
 from pixelpixoo.screens.weather import (
     _WEEKDAYS_SHORT,
     _code_label,
@@ -81,7 +87,7 @@ def paint_tile(
     *,
     outline: bool = True,
 ) -> None:
-    """Paint one logical tile into rect. tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK, countdown, countdown:HOL."""
+    """Paint one logical tile into rect. tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK, countdown, countdown:HOL, bins."""
     if outline and (rect[2] < 64 or rect[3] < 64):
         _pad(img, rect)
 
@@ -100,11 +106,51 @@ def paint_tile(
             _paint_traffic(img, rect, cfg, theme, http, ref=ref)
         elif kind == "countdown":
             _paint_countdown(img, rect, cfg, theme, ref=ref)
+        elif kind == "bins":
+            _paint_bins(img, rect, cfg, theme)
         else:
             _line(img, rect, theme, f"?{kind}", RED, 0)
     except Exception:
         logger.exception("Tile %s failed", tile)
         _line(img, rect, theme, "ERR", RED, 0)
+
+
+def tile_is_visible(tile: str, cfg: AppConfig) -> bool:
+    """Conditional tiles return False when they should leave the layout."""
+    kind = tile.partition(":")[0].strip().lower()
+    if kind == "bins":
+        return bins_are_due(cfg)
+    return True
+
+
+def visible_tiles(cfg: AppConfig, tiles: list[str]) -> list[str]:
+    return [t for t in tiles if tile_is_visible(t, cfg)]
+
+
+def bins_are_due(cfg: AppConfig) -> bool:
+    return bool(_bins_dues(cfg))
+
+
+def _bins_dues(cfg: AppConfig) -> list[BinDue]:
+    bins = cfg.bins
+    if bins is None or not bins.enabled or not bins.streams:
+        return []
+    streams = [
+        (
+            s.label,
+            s.weekday,
+            s.every_weeks,
+            _parse_anchor(s.anchor),
+        )
+        for s in bins.streams
+    ]
+    today = local_today(bins.timezone)
+    return upcoming_dues(
+        streams,
+        today,
+        eve_before=bins.eve_before,
+        lead_days=bins.lead_days,
+    )
 
 
 def _line(
@@ -372,7 +418,7 @@ def _paint_traffic(
             http,
             timezone=_traffic_timezone(cfg),
         )
-        color = _eta_color(eta.duration_traffic_min, eta.duration_min)
+        color = _eta_color(eta.duration_traffic_min, _eta_baseline(eta))
         _line(img, rect, theme, eta.name.upper(), CYAN, 0)
         _line(img, rect, theme, f"{eta.duration_traffic_min}M", color, 1)
         return
@@ -386,7 +432,7 @@ def _paint_traffic(
             http,
             timezone=_traffic_timezone(cfg),
         )
-        color = _eta_color(eta.duration_traffic_min, eta.duration_min)
+        color = _eta_color(eta.duration_traffic_min, _eta_baseline(eta))
         _line(
             img,
             rect,
@@ -425,10 +471,34 @@ def _paint_countdown(
     _line(img, rect, theme, primary, WHITE, 1)
 
 
+def _paint_bins(
+    img: Image.Image,
+    rect: Rect,
+    cfg: AppConfig,
+    theme: Theme,
+) -> None:
+    dues = _bins_dues(cfg)
+    if not dues:
+        _line(img, rect, theme, "BINS", DIM, 0)
+        _line(img, rect, theme, "CLEAR", DIM, 1)
+        return
+    line1, line2, urgency = format_bin_lines(dues)
+    if urgency <= 0:
+        color = ORANGE
+    elif urgency == 1:
+        color = YELLOW
+    else:
+        color = WHITE
+    _line(img, rect, theme, line1, color, 0)
+    _line(img, rect, theme, line2, WHITE, 1)
+
+
 def default_tiles(cfg: AppConfig) -> list[str]:
     tiles: list[str] = []
     if cfg.weather:
         tiles.append("weather")
+    if cfg.bins:
+        tiles.append("bins")
     if cfg.traffic:
         tiles.append("traffic")
     if cfg.sensibo:
@@ -437,4 +507,4 @@ def default_tiles(cfg: AppConfig) -> list[str]:
         tiles.append("f1")
     if cfg.countdown:
         tiles.append("countdown")
-    return tiles
+    return visible_tiles(cfg, tiles)

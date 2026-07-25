@@ -31,8 +31,12 @@ logger = logging.getLogger(__name__)
 
 SENSIBO_BASE = "https://home.sensibo.com/api/v2"
 POD_FIELDS = "id,room,acState,measurements"
-_POD_CACHE_TTL = 45.0
+# Sensibo rate limits are tight (~10 req / 10s with gzip). Prefer one bulk
+# /users/me/pods call and reuse it across tiles/frames.
+_POD_CACHE_TTL = 120.0
 _pod_cache: dict[str, tuple[float, list[dict]]] = {}
+_snapshot_cache: dict[str, tuple[float, "SensiboSnapshot"]] = {}
+_rate_limited_until: float = 0.0
 
 
 @dataclass
@@ -54,24 +58,86 @@ def _short_room(name: str, max_len: int = 8) -> str:
     return cleaned[:max_len]
 
 
+def _snapshot_key(api_key: str, pod_id: str) -> str:
+    return f"{api_key}:{pod_id}"
+
+
+def _store_snapshots_from_pods(api_key: str, pods: list[dict]) -> None:
+    """Warm per-pod snapshot cache from a bulk pods response."""
+    now = time.monotonic()
+    for raw in pods:
+        snap = _parse_pod(raw)
+        if snap.pod_id:
+            _snapshot_cache[_snapshot_key(api_key, snap.pod_id)] = (now, snap)
+
+
+def _cached_snapshot(api_key: str, pod_id: str) -> SensiboSnapshot | None:
+    entry = _snapshot_cache.get(_snapshot_key(api_key, pod_id))
+    if not entry:
+        return None
+    cached_at, snap = entry
+    if time.monotonic() - cached_at < _POD_CACHE_TTL:
+        return snap
+    return None
+
+
+def _stale_snapshot(api_key: str, pod_id: str) -> SensiboSnapshot | None:
+    entry = _snapshot_cache.get(_snapshot_key(api_key, pod_id))
+    return entry[1] if entry else None
+
+
+def _mark_rate_limited(retry_after: float | None = None) -> None:
+    global _rate_limited_until
+    wait = retry_after if retry_after is not None else 60.0
+    _rate_limited_until = max(_rate_limited_until, time.monotonic() + max(5.0, wait))
+    logger.warning("Sensibo rate limited; backing off for %.0fs", wait)
+
+
+def _under_rate_limit() -> bool:
+    return time.monotonic() < _rate_limited_until
+
+
 def _list_pods(api_key: str, client: httpx.Client) -> list[dict]:
+    global _rate_limited_until
     now = time.monotonic()
     cached = _pod_cache.get(api_key)
     if cached and now - cached[0] < _POD_CACHE_TTL:
         return cached[1]
-    response = client.get(
-        f"{SENSIBO_BASE}/users/me/pods",
-        params={"apiKey": api_key, "fields": POD_FIELDS},
-        headers={"Accept-Encoding": "gzip"},
-    )
-    response.raise_for_status()
+    if _under_rate_limit() and cached:
+        return cached[1]
+
+    try:
+        response = client.get(
+            f"{SENSIBO_BASE}/users/me/pods",
+            params={"apiKey": api_key, "fields": POD_FIELDS},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        if response.status_code == 429:
+            retry = response.headers.get("Retry-After")
+            _mark_rate_limited(float(retry) if retry else None)
+            if cached:
+                return cached[1]
+            response.raise_for_status()
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            retry = exc.response.headers.get("Retry-After")
+            _mark_rate_limited(float(retry) if retry else None)
+            if cached:
+                return cached[1]
+        raise
+
     payload = response.json()
     if payload.get("status") not in (None, "success"):
         raise RuntimeError(f"Sensibo status={payload.get('status')}")
     result = payload.get("result", payload)
     if not isinstance(result, list):
         raise RuntimeError("Unexpected Sensibo pods response")
-    _pod_cache[api_key] = (now, result)
+    completed = time.monotonic()
+    _pod_cache[api_key] = (completed, result)
+    _store_snapshots_from_pods(api_key, result)
+    _rate_limited_until = 0.0
+    logger.debug("Sensibo pods refresh (%d devices, ttl %.0fs)", len(result), _POD_CACHE_TTL)
     return result
 
 
@@ -144,31 +210,83 @@ def resolve_devices(cfg: SensiboConfig, client: httpx.Client) -> list[tuple[str,
 
 
 def fetch_snapshot(api_key: str, pod_id: str, client: httpx.Client) -> SensiboSnapshot:
-    response = client.get(
-        f"{SENSIBO_BASE}/pods/{pod_id}",
-        params={"apiKey": api_key, "fields": POD_FIELDS},
-        headers={"Accept-Encoding": "gzip"},
-    )
-    response.raise_for_status()
+    """Return pod state, preferring the cached bulk pods list over per-pod GETs."""
+    cached = _cached_snapshot(api_key, pod_id)
+    if cached is not None:
+        return cached
+
+    # Bulk list already includes measurements + acState for every pod.
+    try:
+        pods = _list_pods(api_key, client)
+    except Exception:
+        stale = _stale_snapshot(api_key, pod_id)
+        if stale is not None:
+            logger.warning("Sensibo list failed; using stale snapshot for %s", pod_id)
+            return stale
+        raise
+
+    for raw in pods:
+        snap = _parse_pod(raw)
+        if snap.pod_id == pod_id:
+            _snapshot_cache[_snapshot_key(api_key, pod_id)] = (time.monotonic(), snap)
+            return snap
+
+    if _under_rate_limit():
+        stale = _stale_snapshot(api_key, pod_id)
+        if stale is not None:
+            return stale
+        raise RuntimeError("Sensibo rate limited and no cached data")
+
+    # Unknown / new pod — one targeted fetch, then cache.
+    try:
+        response = client.get(
+            f"{SENSIBO_BASE}/pods/{pod_id}",
+            params={"apiKey": api_key, "fields": POD_FIELDS},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        if response.status_code == 429:
+            retry = response.headers.get("Retry-After")
+            _mark_rate_limited(float(retry) if retry else None)
+            stale = _stale_snapshot(api_key, pod_id)
+            if stale is not None:
+                return stale
+            response.raise_for_status()
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            retry = exc.response.headers.get("Retry-After")
+            _mark_rate_limited(float(retry) if retry else None)
+            stale = _stale_snapshot(api_key, pod_id)
+            if stale is not None:
+                return stale
+        raise
+
     payload = response.json()
     result = payload.get("result", payload)
     if not isinstance(result, dict):
         raise RuntimeError("Unexpected Sensibo pod response")
     snap = _parse_pod(result)
     if snap.temperature_c is None or snap.humidity is None:
-        # Fallback to dedicated measurements endpoint
-        m = client.get(
-            f"{SENSIBO_BASE}/pods/{pod_id}/measurements",
-            params={"apiKey": api_key},
-            headers={"Accept-Encoding": "gzip"},
-        )
-        m.raise_for_status()
-        rows = m.json().get("result") or []
-        if rows:
-            if snap.temperature_c is None and rows[0].get("temperature") is not None:
-                snap.temperature_c = float(rows[0]["temperature"])
-            if snap.humidity is None and rows[0].get("humidity") is not None:
-                snap.humidity = float(rows[0]["humidity"])
+        # Fallback to dedicated measurements endpoint (rare)
+        try:
+            m = client.get(
+                f"{SENSIBO_BASE}/pods/{pod_id}/measurements",
+                params={"apiKey": api_key},
+                headers={"Accept-Encoding": "gzip"},
+            )
+            if m.status_code != 429:
+                m.raise_for_status()
+                rows = m.json().get("result") or []
+                if rows:
+                    if snap.temperature_c is None and rows[0].get("temperature") is not None:
+                        snap.temperature_c = float(rows[0]["temperature"])
+                    if snap.humidity is None and rows[0].get("humidity") is not None:
+                        snap.humidity = float(rows[0]["humidity"])
+            else:
+                _mark_rate_limited()
+        except Exception:
+            logger.debug("Sensibo measurements fallback failed for %s", pod_id, exc_info=True)
+    _snapshot_cache[_snapshot_key(api_key, pod_id)] = (time.monotonic(), snap)
     return snap
 
 
