@@ -22,7 +22,7 @@ services:
       # Named volumes so GitHub clones don't need gitignored config/.env files
       - pixelpixoo_config:/config
       - pixelpixoo_preview:/preview
-    # Host networking can help on some Proxmox/LXC setups if bridge routing is awkward:
+    # Host networking can help if Docker bridge cannot reach LAN devices:
     # network_mode: host
 
 volumes:

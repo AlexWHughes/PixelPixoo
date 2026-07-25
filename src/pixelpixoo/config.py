@@ -73,7 +73,7 @@ class BinStream:
 @dataclass
 class BinsConfig:
     enabled: bool = True
-    timezone: str = "Australia/Melbourne"
+    timezone: str = "Australia/Sydney"
     # Show tile when put-out is within this many days (0=tonight only).
     lead_days: int = 1
     # True = Australian "bin night": put bins out the evening before collection.
@@ -267,7 +267,7 @@ def _parse_bins(raw: object) -> BinsConfig | None:
         eve = eve.strip().lower() not in ("0", "false", "no", "morning")
     return BinsConfig(
         enabled=True,
-        timezone=str(raw.get("timezone", "Australia/Melbourne")),
+        timezone=str(raw.get("timezone", "Australia/Sydney")),
         lead_days=lead,
         eve_before=bool(eve),
         streams=streams,

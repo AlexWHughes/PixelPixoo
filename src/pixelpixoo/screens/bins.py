@@ -189,7 +189,7 @@ def local_today(timezone: str) -> date:
     try:
         tz = ZoneInfo(timezone)
     except Exception:
-        tz = ZoneInfo("Australia/Melbourne")
+        tz = ZoneInfo("Australia/Sydney")
     return datetime.now(tz).date()
 
 

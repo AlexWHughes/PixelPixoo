@@ -499,7 +499,7 @@ def _bins_public(loaded: AppConfig, raw: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "enabled": bool(bins_raw.get("enabled", False)),
-        "timezone": str(bins_raw.get("timezone", "Australia/Melbourne")),
+        "timezone": str(bins_raw.get("timezone", "Australia/Sydney")),
         "lead_days": int(bins_raw.get("lead_days", 1)),
         "eve_before": bool(bins_raw.get("eve_before", True)),
         "streams": streams,
@@ -676,7 +676,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         bin_streams.append(entry)
     yaml_data["bins"] = {
         "enabled": bool(bins.get("enabled", True)) and bool(bin_streams),
-        "timezone": str(bins.get("timezone", "Australia/Melbourne")),
+        "timezone": str(bins.get("timezone", "Australia/Sydney")),
         "lead_days": max(0, min(6, int(bins.get("lead_days", 1)))),
         "eve_before": bool(bins.get("eve_before", True)),
         "streams": bin_streams,

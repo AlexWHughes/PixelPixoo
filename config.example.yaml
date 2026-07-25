@@ -1,5 +1,5 @@
-# Copy to config.yaml and edit for your setup.
-# Secrets: use .env (GOOGLE_MAPS_API_KEY, SENSIBO_API_KEY, PIXOO_IP).
+# Copy to config.yaml and customise for your setup.
+# Secrets belong in .env (never commit them): PIXOO_IP, GOOGLE_MAPS_API_KEY, SENSIBO_API_KEY.
 
 pixoo_ip: "192.168.1.50"
 rotate_seconds: 18
@@ -9,12 +9,14 @@ enable_f1: true
 display:
   text_scale: normal   # tiny | compact | normal | large
   layout: focus        # focus | dense | custom | split | dashboard
-  # For custom: row_pattern of 1 (full) and 2 (split), e.g. [1, 1, 1, 2]
+  # For custom: row_pattern of 1 (full-width) and 2 (split), e.g. [1, 1, 1, 2]
   # row_pattern: [1, 1, 1, 2]
   # tiles: [weather, sensibo, f1, countdown]
   show_header: true
+  show_borders: true
   tiles: []
 
+# Example location: Sydney CBD, Australia
 weather:
   latitude: -33.8688
   longitude: 151.2093
@@ -36,11 +38,11 @@ f1:
 traffic:
   routes:
     - name: "WORK"
-      origin: "Home Street, Suburb NSW"
-      destination: "Office Street, Sydney NSW"
+      origin: "Example St, Suburb NSW 2000"
+      destination: "Example Ave, Sydney NSW 2000"
 
 sensibo:
-  devices: []
+  devices: []          # pin devices in the web UI, or leave empty to auto-discover
   show_temp: true
   show_humidity: true
   show_power: true
@@ -49,27 +51,27 @@ sensibo:
   show_room: true
 
 countdown:
-  - label: "HOL"
+  - label: "HOLIDAY"
     at: "2026-12-20T00:00:00+10:00"
 
 # Kerbside bins — tile id `bins` (hidden when nothing is due within lead_days)
 bins:
-  enabled: true
-  timezone: "Australia/Melbourne"
+  enabled: false
+  timezone: "Australia/Sydney"
   lead_days: 1          # 0 = tonight only; 1 = tonight + tomorrow
   eve_before: true      # TONIGHT = evening before collection morning
   streams:
     - label: LANDFILL
-      weekday: wed      # collection day
+      weekday: wed
       every_weeks: 1
     - label: RECYCLE
       weekday: wed
       every_weeks: 2
-      anchor: "2026-07-22"  # a known recycle collection date (Wed)
+      anchor: "2026-01-07"  # a known recycle collection date
     - label: GREEN
       weekday: wed
       every_weeks: 2
-      anchor: "2026-07-29"  # opposite fortnight to recycle
+      anchor: "2026-01-14"  # opposite fortnight
 
 schedule:
   enabled: false

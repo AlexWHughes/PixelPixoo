@@ -60,7 +60,7 @@ def _traffic_timezone(cfg: AppConfig) -> str:
         return cfg.weather.timezone
     if cfg.schedule and cfg.schedule.timezone:
         return cfg.schedule.timezone
-    return "Australia/Melbourne"
+    return "Australia/Sydney"
 
 
 def _clip_text(text: str, max_w: int, *, tiny: bool, spacing: int) -> str:

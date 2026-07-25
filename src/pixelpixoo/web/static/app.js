@@ -360,7 +360,7 @@ function fillConfig(cfg) {
   }
 
   form.bins_enabled.checked = !!cfg.bins?.enabled;
-  form.bins_timezone.value = cfg.bins?.timezone || "Australia/Melbourne";
+  form.bins_timezone.value = cfg.bins?.timezone || "Australia/Sydney";
   form.bins_lead_days.value = cfg.bins?.lead_days ?? 1;
   form.bins_eve_before.checked = cfg.bins?.eve_before !== false;
   $("#binsList").innerHTML = "";
@@ -443,7 +443,7 @@ function collectPayload() {
     countdown: readCountdowns(),
     bins: {
       enabled: form.bins_enabled.checked,
-      timezone: form.bins_timezone.value.trim() || "Australia/Melbourne",
+      timezone: form.bins_timezone.value.trim() || "Australia/Sydney",
       lead_days: Number(form.bins_lead_days.value),
       eve_before: form.bins_eve_before.checked,
       streams: readBins(),

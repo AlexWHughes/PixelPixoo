@@ -42,7 +42,7 @@ def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
             return composite
 
     theme = theme_for(cfg.display.text_scale)
-    traffic_tz = "Australia/Melbourne"
+    traffic_tz = "Australia/Sydney"
     if cfg.weather and cfg.weather.timezone:
         traffic_tz = cfg.weather.timezone
     elif cfg.schedule and cfg.schedule.timezone:
