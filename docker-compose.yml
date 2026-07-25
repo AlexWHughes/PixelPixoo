@@ -1,0 +1,26 @@
+services:
+  pixelpixoo:
+    build: .
+    container_name: pixelpixoo
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PIXELPIXOO_CONFIG: /config/config.yaml
+      PIXELPIXOO_ENV: /config/.env
+      PIXOO_IP: ${PIXOO_IP:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      SENSIBO_API_KEY: ${SENSIBO_API_KEY:-}
+      PIXELPIXOO_PREVIEW: ${PIXELPIXOO_PREVIEW:-}
+      PIXELPIXOO_ONCE: ${PIXELPIXOO_ONCE:-}
+      PIXELPIXOO_VERBOSE: ${PIXELPIXOO_VERBOSE:-}
+      PIXELPIXOO_WEB_HOST: ${PIXELPIXOO_WEB_HOST:-0.0.0.0}
+      PIXELPIXOO_WEB_PORT: "8080"
+    ports:
+      - "${PIXELPIXOO_WEB_PORT:-8787}:8080"
+    volumes:
+      - ./config.yaml:/config/config.yaml
+      - ./.env:/config/.env
+      - ./preview:/preview
+    # Host networking can help on some Proxmox/LXC setups if bridge routing is awkward:
+    # network_mode: host

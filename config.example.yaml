@@ -1,0 +1,65 @@
+# Copy to config.yaml and edit for your setup.
+# Secrets: use .env (GOOGLE_MAPS_API_KEY, SENSIBO_API_KEY, PIXOO_IP).
+
+pixoo_ip: "192.168.1.50"
+rotate_seconds: 18
+brightness: 80
+enable_f1: true
+
+display:
+  text_scale: normal   # tiny | compact | normal | large
+  layout: focus        # focus | dense | custom | split | dashboard
+  # For custom: row_pattern of 1 (full) and 2 (split), e.g. [1, 1, 1, 2]
+  # row_pattern: [1, 1, 1, 2]
+  # tiles: [weather, sensibo, f1, countdown]
+  show_header: true
+  tiles: []
+
+weather:
+  latitude: -33.8688
+  longitude: 151.2093
+  label: "SYD"
+  timezone: "Australia/Sydney"
+  forecast_days: 5     # 1–7
+  show_current: true
+  show_forecast: true
+
+f1:
+  enabled: true
+  mode: next           # next | list
+  sessions: [fp1, fp2, fp3, sq, sprint, quali, race]
+  show_countdown: true
+  show_datetime: true
+  show_race_name: true
+  show_country: true
+
+traffic:
+  routes:
+    - name: "WORK"
+      origin: "Home Street, Suburb NSW"
+      destination: "Office Street, Sydney NSW"
+
+sensibo:
+  devices: []
+  show_temp: true
+  show_humidity: true
+  show_power: true
+  show_mode: true
+  show_target: true
+  show_room: true
+
+countdown:
+  - label: "HOL"
+    at: "2026-12-20T00:00:00+10:00"
+
+schedule:
+  enabled: false
+  timezone: "Australia/Sydney"
+  outside: off         # off = turn screen off; pause = leave last frame
+  windows:
+    - days: [mon, tue, wed, thu, fri]
+      start: "07:00"
+      end: "22:00"
+    - days: [sat, sun]
+      start: "09:00"
+      end: "23:00"

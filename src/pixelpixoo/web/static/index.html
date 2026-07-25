@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PixelPixoo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="grid-bg" aria-hidden="true"></div>
+
+  <header class="top">
+    <div class="brand-block">
+      <p class="eyebrow">DIVOOM PIXOO 64</p>
+      <h1 class="brand">PixelPixoo</h1>
+      <p class="tagline">Configure screens. Push pixels. No cloud middleman.</p>
+    </div>
+    <div class="top-actions">
+      <div class="status-pill" id="runPill" data-state="unknown">
+        <span class="dot"></span>
+        <span id="runLabel">…</span>
+      </div>
+      <button type="button" class="btn ghost" id="btnReload">Reload loop</button>
+      <button type="button" class="btn primary" id="btnSave">Save &amp; apply</button>
+    </div>
+  </header>
+
+  <p class="toast" id="toast" hidden></p>
+
+  <main class="layout">
+    <aside class="rail">
+      <section class="panel live">
+        <div class="panel-head">
+          <h2>Live matrix</h2>
+          <button type="button" class="btn tiny" id="btnRefreshPreviews">Refresh</button>
+        </div>
+        <div class="matrix-stage">
+          <img id="heroPreview" class="matrix" alt="Current screen preview" width="256" height="256" />
+          <div class="matrix-meta">
+            <div><span class="k">now</span> <strong id="statCurrent">—</strong></div>
+            <div><span class="k">last</span> <strong id="statLast">—</strong></div>
+            <div><span class="k">pushes</span> <strong id="statPushes">0</strong></div>
+            <div><span class="k">errors</span> <strong id="statErrors">0</strong></div>
+          </div>
+        </div>
+        <p class="err-line" id="statError" hidden></p>
+        <div class="thumb-row" id="thumbRow"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Loop health</h2></div>
+        <dl class="kv">
+          <div><dt>Target</dt><dd id="statIp">—</dd></div>
+          <div><dt>Mode</dt><dd id="statMode">—</dd></div>
+          <div><dt>Screens</dt><dd id="statCount">—</dd></div>
+          <div><dt>Rotate</dt><dd id="statRotate">—</dd></div>
+          <div><dt>Last push</dt><dd id="statPushAt">—</dd></div>
+          <div><dt>Started</dt><dd id="statStarted">—</dd></div>
+        </dl>
+      </section>
+    </aside>
+
+    <div class="editor">
+      <form id="configForm">
+        <section class="panel" id="sec-device">
+          <div class="panel-head">
+            <h2>Device</h2>
+            <p class="hint">LAN address the container can reach. Test before going live.</p>
+          </div>
+          <div class="fields three">
+            <label>
+              <span>Pixoo IP</span>
+              <input name="pixoo_ip" required pattern="^[0-9A-Za-z.:-]+$" placeholder="192.168.1.100" />
+            </label>
+            <label>
+              <span>Brightness <em id="brightnessVal">80</em></span>
+              <input name="brightness" type="range" min="0" max="100" value="80" />
+            </label>
+            <label>
+              <span>Rotate seconds <em id="rotateVal">18</em></span>
+              <input name="rotate_seconds" type="range" min="15" max="120" value="18" />
+            </label>
+          </div>
+          <div class="fields two">
+            <label class="check">
+              <input type="checkbox" name="preview_mode" />
+              <span>Preview mode <small>write PNGs instead of pushing to the device</small></span>
+            </label>
+            <label>
+              <span>Preview directory</span>
+              <input name="preview_dir" value="/preview" />
+            </label>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn ghost" id="btnTestPixoo">Test Pixoo connection</button>
+            <span class="inline-note" id="pixooTestNote"></span>
+          </div>
+        </section>
+
+        <section class="panel" id="sec-display">
+          <div class="panel-head">
+            <h2>Display</h2>
+            <p class="hint">Text scale and frame layout. Use multi-tile layouts to pack several details on one 64×64 view.</p>
+          </div>
+
+          <p class="field-label">Text scale</p>
+          <div class="option-grid" id="textScaleOptions" role="radiogroup" aria-label="Text scale">
+            <label class="option-card">
+              <input type="radio" name="text_scale" value="tiny" />
+              <span class="option-title">Tiny</span>
+              <span class="option-sample sample-tiny">12° 55% ON</span>
+              <span class="option-desc">3×5 font — max density</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="text_scale" value="compact" />
+              <span class="option-title">Compact</span>
+              <span class="option-sample sample-compact">SYD 18°</span>
+              <span class="option-desc">5×7, tight spacing</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="text_scale" value="normal" checked />
+              <span class="option-title">Normal</span>
+              <span class="option-sample sample-normal">18°</span>
+              <span class="option-desc">Hero numbers + labels</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="text_scale" value="large" />
+              <span class="option-title">Large</span>
+              <span class="option-sample sample-large">18°</span>
+              <span class="option-desc">Biggest type, fewer rows</span>
+            </label>
+          </div>
+
+          <p class="field-label">Layout mode</p>
+          <div class="option-grid option-grid-5" id="layoutOptions" role="radiogroup" aria-label="Layout mode">
+            <label class="option-card">
+              <input type="radio" name="layout" value="focus" checked />
+              <span class="option-title">Focus</span>
+              <span class="option-viz viz-focus" aria-hidden="true"></span>
+              <span class="option-desc">One topic per slide (rotate weather → traffic → …)</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="layout" value="dense" />
+              <span class="option-title">Dense list</span>
+              <span class="option-viz viz-list" aria-hidden="true"></span>
+              <span class="option-desc">All tiles stacked on one frame</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="layout" value="custom" />
+              <span class="option-title">Custom rows</span>
+              <span class="option-viz viz-custom" aria-hidden="true"></span>
+              <span class="option-desc">Build 1-wide / 2-split rows (e.g. 1,1,1,2)</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="layout" value="split" />
+              <span class="option-title">Split</span>
+              <span class="option-viz viz-split" aria-hidden="true"></span>
+              <span class="option-desc">Two panes per slide (pairs of tiles)</span>
+            </label>
+            <label class="option-card">
+              <input type="radio" name="layout" value="dashboard" />
+              <span class="option-title">Dashboard</span>
+              <span class="option-viz viz-grid" aria-hidden="true"></span>
+              <span class="option-desc">2×2 grid — four details at once</span>
+            </label>
+          </div>
+
+          <div class="fields two">
+            <label class="check">
+              <input type="checkbox" name="show_header" checked />
+              <span>Show view header bar</span>
+            </label>
+          </div>
+
+          <p class="field-label">Tiles <small>tick to include · order = check order</small></p>
+          <div id="tilePicker" class="tile-picker" role="group" aria-label="Tiles"></div>
+          <div class="tile-order-bar">
+            <span class="muted">Order:</span>
+            <ol id="tileOrder" class="tile-order"></ol>
+            <button type="button" class="btn tiny" id="btnClearTiles">Clear</button>
+          </div>
+
+          <div id="rowPatternPanel" class="row-pattern-panel" hidden>
+            <p class="field-label">Row pattern <small>1 = full width · 2 = split</small></p>
+            <div class="row-pattern-actions">
+              <button type="button" class="btn tiny" id="btnAddRow1">+ Full (1)</button>
+              <button type="button" class="btn tiny" id="btnAddRow2">+ Split (2)</button>
+              <button type="button" class="btn tiny" id="btnClearRows">Clear</button>
+            </div>
+            <ol id="rowPatternList" class="row-pattern-list"></ol>
+            <p class="hint">Example: <code>1,1,1,2</code> or <code>2,2,1,2</code>. Tiles fill left→right, top→bottom.</p>
+          </div>
+
+          <div class="list-head">
+            <h3>Custom views</h3>
+            <button type="button" class="btn tiny" id="btnAddView">Add view</button>
+          </div>
+          <p class="hint">Optional. When set, these replace the auto layout and become the rotate playlist.</p>
+          <div id="viewsList" class="stack"></div>
+        </section>
+
+        <section class="panel" id="sec-weather">
+          <div class="panel-head">
+            <h2>Weather</h2>
+            <label class="switch">
+              <input type="checkbox" name="weather_enabled" checked />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <p class="hint">Open-Meteo — no API key. Current conditions plus optional multi-day forecast.</p>
+          <div class="fields four weather-fields">
+            <label>
+              <span>Label <small>≤8 chars</small></span>
+              <input name="weather_label" maxlength="8" />
+            </label>
+            <label>
+              <span>Latitude</span>
+              <input name="weather_latitude" type="number" step="any" />
+            </label>
+            <label>
+              <span>Longitude</span>
+              <input name="weather_longitude" type="number" step="any" />
+            </label>
+            <label>
+              <span>Timezone</span>
+              <input name="weather_timezone" placeholder="Australia/Sydney" list="tzlist" />
+            </label>
+          </div>
+          <div class="fields three weather-fields">
+            <label>
+              <span>Forecast days <em id="forecastDaysVal">1</em></span>
+              <input name="forecast_days" type="range" min="1" max="7" value="1" />
+            </label>
+            <label class="check align-end">
+              <input type="checkbox" name="weather_show_current" checked />
+              <span>Show current</span>
+            </label>
+            <label class="check align-end">
+              <input type="checkbox" name="weather_show_forecast" />
+              <span>Show forecast rows</span>
+            </label>
+          </div>
+          <datalist id="tzlist">
+            <option value="Australia/Sydney"></option>
+            <option value="Australia/Melbourne"></option>
+            <option value="Australia/Brisbane"></option>
+            <option value="Australia/Perth"></option>
+            <option value="Pacific/Auckland"></option>
+            <option value="UTC"></option>
+          </datalist>
+        </section>
+
+        <section class="panel" id="sec-traffic">
+          <div class="panel-head">
+            <h2>Traffic</h2>
+            <label class="switch">
+              <input type="checkbox" name="traffic_enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <p class="hint">Google Directions with live traffic. One slide per route. Leave the key blank to keep the existing secret.</p>
+          <div class="fields two">
+            <label class="grow">
+              <span>Google Maps API key <small id="googleHint"></small></span>
+              <input name="google_maps_api_key" type="password" autocomplete="off" placeholder="Paste new key to replace" />
+            </label>
+            <label class="check align-end">
+              <input type="checkbox" name="clear_google_maps_api_key" />
+              <span>Clear key</span>
+            </label>
+          </div>
+          <div class="list-head">
+            <h3>Routes</h3>
+            <button type="button" class="btn tiny" id="btnAddRoute">Add route</button>
+          </div>
+          <div id="routesList" class="stack"></div>
+        </section>
+
+        <section class="panel" id="sec-sensibo">
+          <div class="panel-head">
+            <h2>Sensibo</h2>
+            <label class="switch">
+              <input type="checkbox" name="sensibo_enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <p class="hint">Indoor temp, humidity, and AC state via Sensibo API v2. Toggle which fields appear on the matrix.</p>
+          <div class="fields two">
+            <label class="grow">
+              <span>Sensibo API key <small id="sensiboHint"></small></span>
+              <input name="sensibo_api_key" type="password" autocomplete="off" placeholder="Paste new key to replace" />
+            </label>
+            <label class="check align-end">
+              <input type="checkbox" name="clear_sensibo_api_key" />
+              <span>Clear key</span>
+            </label>
+          </div>
+          <div class="chip-row">
+            <label class="chip"><input type="checkbox" name="sensibo_show_temp" checked /><span>Temp</span></label>
+            <label class="chip"><input type="checkbox" name="sensibo_show_humidity" checked /><span>Humidity</span></label>
+            <label class="chip"><input type="checkbox" name="sensibo_show_power" checked /><span>On/Off</span></label>
+            <label class="chip"><input type="checkbox" name="sensibo_show_mode" checked /><span>Mode</span></label>
+            <label class="chip"><input type="checkbox" name="sensibo_show_target" checked /><span>Target</span></label>
+            <label class="chip"><input type="checkbox" name="sensibo_show_room" checked /><span>Room</span></label>
+          </div>
+          <div class="row-actions">
+            <label class="check">
+              <input type="checkbox" name="sensibo_auto_discover" checked />
+              <span>Auto-discover all pods <small>ignores pinned list below</small></span>
+            </label>
+            <button type="button" class="btn ghost" id="btnDiscoverSensibo">Discover now</button>
+          </div>
+          <div id="sensiboDiscover" class="discover" hidden></div>
+          <div class="list-head">
+            <h3>Pinned devices</h3>
+            <button type="button" class="btn tiny" id="btnAddSensibo">Add pin</button>
+          </div>
+          <div id="sensiboList" class="stack"></div>
+        </section>
+
+        <section class="panel" id="sec-f1">
+          <div class="panel-head">
+            <h2>Next F1 race</h2>
+            <label class="switch">
+              <input type="checkbox" name="enable_f1" checked />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <p class="hint">Jolpica weekend sessions — practice, sprint (when present), quali, and race with countdown + local date/time.</p>
+          <div class="fields two">
+            <label>
+              <span>Session mode</span>
+              <select name="f1_mode">
+                <option value="next">Next upcoming session</option>
+                <option value="list">List remaining sessions</option>
+              </select>
+            </label>
+            <div class="chip-row" style="align-content:end">
+              <label class="chip"><input type="checkbox" name="f1_show_countdown" checked /><span>Countdown</span></label>
+              <label class="chip"><input type="checkbox" name="f1_show_datetime" checked /><span>Date/time</span></label>
+              <label class="chip"><input type="checkbox" name="f1_show_race_name" checked /><span>Race name</span></label>
+              <label class="chip"><input type="checkbox" name="f1_show_country" checked /><span>Country</span></label>
+            </div>
+          </div>
+          <p class="field-label">Sessions to include</p>
+          <div class="chip-row" id="f1Sessions">
+            <label class="chip"><input type="checkbox" name="f1_sess_fp1" value="fp1" checked /><span>FP1</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_fp2" value="fp2" checked /><span>FP2</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_fp3" value="fp3" checked /><span>FP3</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_sq" value="sq" checked /><span>Sprint Quali</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_sprint" value="sprint" checked /><span>Sprint</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_quali" value="quali" checked /><span>Qualifying</span></label>
+            <label class="chip"><input type="checkbox" name="f1_sess_race" value="race" checked /><span>Race</span></label>
+          </div>
+        </section>
+
+        <section class="panel" id="sec-schedule">
+          <div class="panel-head">
+            <h2>Schedule</h2>
+            <label class="switch">
+              <input type="checkbox" name="schedule_enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <p class="hint">Only show the dashboard during these windows. Outside hours the Pixoo screen turns off (or pauses).</p>
+          <div class="fields three">
+            <label>
+              <span>Timezone</span>
+              <input name="schedule_timezone" placeholder="Australia/Sydney" list="tzlist" />
+            </label>
+            <label>
+              <span>Outside windows</span>
+              <select name="schedule_outside">
+                <option value="off">Turn screen off</option>
+                <option value="pause">Pause pushes (leave last frame)</option>
+              </select>
+            </label>
+            <div class="row-actions" style="align-items:end">
+              <button type="button" class="btn tiny" id="btnAddWindow">Add window</button>
+            </div>
+          </div>
+          <div id="scheduleList" class="stack"></div>
+        </section>
+
+        <section class="panel" id="sec-countdown">
+          <div class="panel-head">
+            <h2>Countdowns</h2>
+            <button type="button" class="btn tiny" id="btnAddCountdown">Add date</button>
+          </div>
+          <p class="hint">ISO-8601 timestamps with offset, e.g. <code>2026-12-20T00:00:00+10:00</code>. One slide each.</p>
+          <div id="countdownList" class="stack"></div>
+        </section>
+
+        <footer class="form-foot">
+          <button type="submit" class="btn primary wide">Save &amp; apply</button>
+          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads the push loop without restarting the container.</p>
+        </footer>
+      </form>
+    </div>
+  </main>
+
+  <template id="tplRoute">
+    <div class="card-row route-row">
+      <label><span>Name</span><input data-f="name" maxlength="8" placeholder="WORK" /></label>
+      <label class="grow"><span>Origin</span><input data-f="origin" placeholder="Address or lat,lng" /></label>
+      <label class="grow"><span>Destination</span><input data-f="destination" placeholder="Address or lat,lng" /></label>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <template id="tplSensibo">
+    <div class="card-row sensibo-row">
+      <label><span>Display name <small>on Pixoo</small></span><input data-f="label" maxlength="8" placeholder="LR" /></label>
+      <label class="grow"><span>Room name <small>match Sensibo</small></span><input data-f="room" placeholder="Living Room" /></label>
+      <label class="grow"><span>Pod ID</span><input data-f="pod_id" placeholder="optional" /></label>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <template id="tplCountdown">
+    <div class="card-row countdown-row">
+      <label><span>Label</span><input data-f="label" maxlength="8" placeholder="HOL" /></label>
+      <label class="grow"><span>When (ISO-8601)</span><input data-f="at" placeholder="2026-12-20T00:00:00+10:00" /></label>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <template id="tplView">
+    <div class="card-row view-row">
+      <label><span>Name</span><input data-f="name" maxlength="10" placeholder="HOME" /></label>
+      <label>
+        <span>Layout</span>
+        <select data-f="layout">
+          <option value="list">list</option>
+          <option value="rows">rows (custom)</option>
+          <option value="split_h">split_h</option>
+          <option value="split_v">split_v</option>
+          <option value="grid_4">grid_4</option>
+          <option value="focus">focus</option>
+        </select>
+      </label>
+      <label>
+        <span>Scale</span>
+        <select data-f="text_scale">
+          <option value="tiny">tiny</option>
+          <option value="compact" selected>compact</option>
+          <option value="normal">normal</option>
+          <option value="large">large</option>
+        </select>
+      </label>
+      <label class="grow"><span>Row pattern <small>1,2</small></span><input data-f="row_pattern" placeholder="1,1,1,2" /></label>
+      <div class="view-tiles grow">
+        <span class="field-label">Tiles</span>
+        <div class="tile-picker view-tile-picker" data-role="view-tiles"></div>
+      </div>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <template id="tplWindow">
+    <div class="card-row window-row">
+      <label class="grow">
+        <span>Days</span>
+        <input data-f="days" placeholder="mon,tue,wed,thu,fri or all" />
+      </label>
+      <label>
+        <span>Start</span>
+        <input data-f="start" placeholder="07:00" />
+      </label>
+      <label>
+        <span>End</span>
+        <input data-f="end" placeholder="22:00" />
+      </label>
+      <button type="button" class="btn tiny danger" data-remove>Remove</button>
+    </div>
+  </template>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>
