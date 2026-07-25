@@ -57,9 +57,22 @@ def get_config() -> dict[str, Any]:
 
 
 @app.get("/api/config/export")
-def export_config() -> Response:
-    """Download full config JSON (includes API keys)."""
-    bundle = export_config_bundle()
+def export_config_get() -> Response:
+    """Download full saved config JSON (includes API keys)."""
+    return _export_response(None)
+
+
+@app.post("/api/config/export")
+def export_config_post(payload: dict[str, Any] | None = None) -> Response:
+    """Download full config from the live web UI form payload."""
+    return _export_response(payload)
+
+
+def _export_response(form_payload: dict[str, Any] | None) -> Response:
+    try:
+        bundle = export_config_bundle(form_payload)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     body = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
     return Response(

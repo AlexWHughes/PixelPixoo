@@ -50,7 +50,8 @@ Web UI features:
 |--------|------|---------|
 | GET | `/api/status` | Loop health |
 | GET/PUT | `/api/config` | Read/write config (secrets masked on GET) |
-| GET | `/api/config/export` | Download full JSON backup (includes API keys) |
+| GET | `/api/config/export` | Download full **saved** JSON backup (includes API keys) |
+| POST | `/api/config/export` | Download full **live UI** JSON (tiles, text scale, layout, screens, secrets) |
 | POST | `/api/config/import` | Replace config from export JSON |
 | POST | `/api/reload` | Reload loop |
 | POST | `/api/pixoo/test` | Ping device |

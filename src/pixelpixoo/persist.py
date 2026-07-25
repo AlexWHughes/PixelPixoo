@@ -27,7 +27,7 @@ _WEEKDAY_YAML = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 SECRET_KEYS = ("PIXOO_IP", "GOOGLE_MAPS_API_KEY", "SENSIBO_API_KEY", "PIXELPIXOO_PREVIEW")
 EXPORT_FORMAT = "pixelpixoo-config"
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 _IMPORT_DROP_KEYS = frozenset(
     {
         "tile_options",
@@ -265,17 +265,142 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
     }
 
 
-def export_config_bundle() -> dict[str, Any]:
-    """Full portable backup for download (includes raw secrets)."""
-    pub = public_config_dict()
+def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Full portable backup (UI fields + raw secrets).
+
+    When ``form_payload`` is provided (web Export), that live form state is the
+    source of truth — including display tiles, text scale, layout, bins, etc.
+    Empty/masked secret fields fall back to the server's stored secrets.
+    """
     env = read_env_file()
     google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
     sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
 
+    if form_payload and isinstance(form_payload, dict):
+        config = _export_config_from_form(form_payload, google=google, sensibo=sensibo)
+    else:
+        config = _export_config_from_saved(google=google, sensibo=sensibo)
+
+    if not str(config.get("pixoo_ip", "")).strip():
+        raise ValueError("pixoo_ip is required for export")
+
+    return {
+        "format": EXPORT_FORMAT,
+        "version": EXPORT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "config": config,
+    }
+
+
+def _usable_secret(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value.strip() and not value.startswith("••••"):
+        return value.strip()
+    return fallback
+
+
+def _normalize_display_export(display: Any) -> dict[str, Any]:
+    d = display if isinstance(display, dict) else {}
+    tiles = [str(t).strip() for t in (d.get("tiles") or []) if str(t).strip()]
+    row_pattern = [
+        int(n)
+        for n in (d.get("row_pattern") or [])
+        if str(n).strip() in ("1", "2") or n in (1, 2)
+    ]
+    return {
+        "text_scale": str(d.get("text_scale") or "normal"),
+        "layout": str(d.get("layout") or "focus"),
+        "show_header": bool(d.get("show_header", True)),
+        "show_borders": bool(d.get("show_borders", True)),
+        "tiles": tiles,
+        "row_pattern": row_pattern,
+    }
+
+
+def _normalize_views_export(views: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in views or []:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        row_pattern = [
+            int(n)
+            for n in (item.get("row_pattern") or [])
+            if str(n).strip() in ("1", "2") or n in (1, 2)
+        ]
+        out.append(
+            {
+                "name": str(item["name"])[:10],
+                "layout": str(item.get("layout", "list")),
+                "text_scale": str(item.get("text_scale", "compact")),
+                "show_header": bool(item.get("show_header", True)),
+                "show_borders": bool(item.get("show_borders", True)),
+                "tiles": [
+                    str(t).strip() for t in (item.get("tiles") or []) if str(t).strip()
+                ],
+                "row_pattern": row_pattern,
+            }
+        )
+    return out
+
+
+def _export_config_from_form(
+    form_payload: dict[str, Any], *, google: str, sensibo: str
+) -> dict[str, Any]:
+    config = dict(form_payload)
+    for key in _IMPORT_DROP_KEYS:
+        config.pop(key, None)
+
+    f1 = config.get("f1")
+    if isinstance(f1, dict):
+        f1 = dict(f1)
+        f1.pop("session_options", None)
+        config["f1"] = f1
+
+    config["display"] = _normalize_display_export(config.get("display"))
+    config["views"] = _normalize_views_export(config.get("views"))
+    config["countdown"] = [
+        {"label": str(c.get("label", "")), "at": str(c.get("at", ""))}
+        for c in (config.get("countdown") or [])
+        if isinstance(c, dict) and c.get("label") and c.get("at")
+    ]
+    config["bins"] = dict(config.get("bins") or {}) if isinstance(config.get("bins"), dict) else {}
+    config["schedule"] = (
+        dict(config.get("schedule") or {})
+        if isinstance(config.get("schedule"), dict)
+        else {}
+    )
+    config["weather"] = (
+        dict(config.get("weather") or {})
+        if isinstance(config.get("weather"), dict)
+        else {}
+    )
+    config["traffic"] = (
+        dict(config.get("traffic") or {})
+        if isinstance(config.get("traffic"), dict)
+        else {}
+    )
+    config["sensibo"] = (
+        dict(config.get("sensibo") or {})
+        if isinstance(config.get("sensibo"), dict)
+        else {}
+    )
+    config["google_maps_api_key"] = _usable_secret(
+        config.get("google_maps_api_key"), google
+    )
+    config["sensibo_api_key"] = _usable_secret(config.get("sensibo_api_key"), sensibo)
+    config["pixoo_ip"] = str(config.get("pixoo_ip") or "").strip()
+    config["preview_mode"] = bool(config.get("preview_mode"))
+    config["preview_dir"] = str(config.get("preview_dir") or "/preview")
+    config["enable_f1"] = bool(config.get("enable_f1", True))
+    config["rotate_seconds"] = float(config.get("rotate_seconds", 18))
+    config["brightness"] = int(config.get("brightness", 80))
+    return config
+
+
+def _export_config_from_saved(*, google: str, sensibo: str) -> dict[str, Any]:
+    pub = public_config_dict()
     f1 = dict(pub.get("f1") or {})
     f1.pop("session_options", None)
-
-    config: dict[str, Any] = {
+    return {
         "pixoo_ip": pub.get("pixoo_ip", ""),
         "rotate_seconds": pub.get("rotate_seconds", 18),
         "brightness": pub.get("brightness", 80),
@@ -288,17 +413,11 @@ def export_config_bundle() -> dict[str, Any]:
         "sensibo": pub.get("sensibo") or {},
         "countdown": pub.get("countdown") or [],
         "bins": pub.get("bins") or {},
-        "display": pub.get("display") or {},
-        "views": pub.get("views") or [],
+        "display": _normalize_display_export(pub.get("display")),
+        "views": _normalize_views_export(pub.get("views")),
         "schedule": pub.get("schedule") or {},
         "google_maps_api_key": google,
         "sensibo_api_key": sensibo,
-    }
-    return {
-        "format": EXPORT_FORMAT,
-        "version": EXPORT_VERSION,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "config": config,
     }
 
 
@@ -325,6 +444,10 @@ def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
         f1 = dict(f1)
         f1.pop("session_options", None)
         payload["f1"] = f1
+
+    payload["display"] = _normalize_display_export(payload.get("display"))
+    if "views" in payload:
+        payload["views"] = _normalize_views_export(payload.get("views"))
 
     # Full replace for secrets when keys are present (empty ⇒ clear)
     if "google_maps_api_key" in payload:
