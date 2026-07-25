@@ -563,10 +563,25 @@ async function saveConfig(event) {
 
 async function exportConfig() {
   try {
-    const res = await fetch("/api/config/export");
+    const payload = collectPayload();
+    // Export the live form (tiles, text scale, layout, bins, …), not only disk.
+    delete payload.clear_google_maps_api_key;
+    delete payload.clear_sensibo_api_key;
+    const res = await fetch("/api/config/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || res.statusText);
+      let detail = text || res.statusText;
+      try {
+        const parsed = JSON.parse(text);
+        detail = parsed.detail || detail;
+      } catch {
+        /* keep text */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
     const blob = await res.blob();
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -578,7 +593,7 @@ async function exportConfig() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast("Exported full config (includes API keys)", true);
+    showToast("Exported full UI config (includes API keys)", true);
   } catch (err) {
     showToast(err.message || String(err), false);
   }
@@ -593,7 +608,7 @@ async function onImportFileSelected(event) {
   event.target.value = "";
   if (!file) return;
   const ok = window.confirm(
-    `Import “${file.name}”? This replaces the current config and any API keys in the file.`
+    `Import “${file.name}”? This replaces the current config — tiles, text scale, layout, screens, and any API keys in the file.`
   );
   if (!ok) return;
   try {
@@ -604,13 +619,15 @@ async function onImportFileSelected(event) {
     } catch {
       throw new Error("File is not valid JSON");
     }
-    const result = await api("/api/config/import", {
+    await api("/api/config/import", {
       method: "POST",
       body: JSON.stringify(body),
     });
-    fillConfig(result.config || (await api("/api/config")));
+    // Re-fetch public config so tile_options / hints match the imported layout
+    const cfg = await api("/api/config");
+    fillConfig(cfg);
     await refreshStatus();
-    showToast("Imported. Push loop reloading…", true);
+    showToast("Imported full config. Push loop reloading…", true);
   } catch (err) {
     showToast(err.message || String(err), false);
   }
