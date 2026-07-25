@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from PIL import Image, ImageDraw
 
 from pixelpixoo.config import AppConfig
 from pixelpixoo.renderer import (
-    BLUE,
     CYAN,
     DIM,
-    GRAY,
     GREEN,
     ORANGE,
     RED,
@@ -27,22 +27,34 @@ from pixelpixoo.renderer import (
 from pixelpixoo.screens.countdown import _format_remaining, _parse_target
 from pixelpixoo.screens.f1 import (
     _countdown,
-    _when_date,
     _when_short,
-    _when_time,
     filter_sessions,
     race_title,
 )
 from pixelpixoo.screens.f1 import _fetch as _fetch_f1
 from pixelpixoo.screens.sensibo import fetch_snapshot, resolve_devices
 from pixelpixoo.screens.traffic import _eta_color, _fetch_route
-from pixelpixoo.screens.weather import _code_short, _day_label, _weekday
+from pixelpixoo.screens.weather import (
+    _WEEKDAYS_SHORT,
+    _code_label,
+    _day_label,
+    draw_tiny_rain_cloud,
+)
 from pixelpixoo.screens.weather import _fetch as _fetch_weather
 from pixelpixoo.theme import Theme
 
 logger = logging.getLogger(__name__)
 
 Rect = tuple[int, int, int, int]  # x, y, w, h
+WEATHER_PAGE_SECONDS = 8.0
+
+
+def _traffic_timezone(cfg: AppConfig) -> str:
+    if cfg.weather and cfg.weather.timezone:
+        return cfg.weather.timezone
+    if cfg.schedule and cfg.schedule.timezone:
+        return cfg.schedule.timezone
+    return "Australia/Melbourne"
 
 
 def _clip_text(text: str, max_w: int, *, tiny: bool, spacing: int) -> str:
@@ -140,38 +152,88 @@ def _paint_weather(
         _line(img, rect, theme, "NO WX", DIM, 0)
         return
     data = _fetch_weather(cfg.weather, http)
-    label = cfg.weather.label.upper()
-    row = 0
+    try:
+        tz = ZoneInfo(cfg.weather.timezone)
+        now = datetime.now(tz)
+        today = now.date()
+    except Exception:
+        now = datetime.now()
+        today = now.date()
+
+    clock = now.strftime("%H:%M")
+
+    def _top_line(day: date, low: float, high: float) -> str:
+        lo, hi = int(round(low)), int(round(high))
+        tiny = theme.use_tiny_font
+        spacing = theme.spacing
+        limit = rect[2] - 2
+        candidates = [
+            f"{_day_label(day)} {clock} {lo}° / {hi}°",
+            f"{_day_label(day)} {clock} {lo}°/{hi}°",
+            f"{_day_label(day, short=True)} {clock} {lo}°/{hi}°",
+            f"{_WEEKDAYS_SHORT[day.weekday()]} {day.day} {clock} {lo}°/{hi}°",
+        ]
+        for candidate in candidates:
+            if text_width(candidate.upper(), tiny=tiny, spacing=spacing) <= limit:
+                return candidate
+        return candidates[-1]
+
+    # Pages: "Sat 25th 21:16 10° / 14°" / "Cloudy 4%" + rain icon
+    pages: list[tuple[str, str, int | None]] = []
     if cfg.weather.show_current:
-        temp = f"{int(round(data.temperature))}°"
-        cond = _code_short(data.weather_code)
-        hl = f"H{int(round(data.high))} L{int(round(data.low))}"
-        if rect[3] >= 28 and theme.text_scale in ("normal", "large") and not cfg.weather.show_forecast:
-            _line(img, rect, theme, f"{label} {temp}", WHITE, 0, hero=True)
-            _line(img, rect, theme, cond, GRAY, 1)
-            _line(img, rect, theme, hl, ORANGE, 2)
-            return
-        _line(img, rect, theme, f"{label} {temp}", CYAN, row)
-        row += 1
-        _line(img, rect, theme, f"{cond} {hl}", WHITE, row)
-        row += 1
-    if cfg.weather.show_forecast and data.forecast:
-        today = datetime.now().date()
-        days = [d for d in data.forecast if not cfg.weather.show_current or d.day > today]
-        if not days:
-            days = data.forecast[1:] if len(data.forecast) > 1 else data.forecast
-        line_h = theme.body_h + theme.line_gap
-        max_rows = max(0, (rect[3] - 2) // max(1, line_h) - row)
-        for day in days[:max_rows]:
-            _line(
-                img,
-                rect,
-                theme,
-                f"{_weekday(day.day)} {int(round(day.high))}/{int(round(day.low))} {_code_short(day.weather_code)}",
-                WHITE,
-                row,
+        pages.append(
+            (
+                _top_line(today, data.low, data.high),
+                _code_label(data.weather_code).title(),
+                data.rain_chance,
             )
-            row += 1
+        )
+    if cfg.weather.show_forecast and data.forecast:
+        for day in data.forecast:
+            if cfg.weather.show_current and day.day == today:
+                continue
+            pages.append(
+                (
+                    _top_line(day.day, day.low, day.high),
+                    _code_label(day.weather_code).title(),
+                    day.rain_chance,
+                )
+            )
+    if not pages:
+        _line(img, rect, theme, "NO WX", DIM, 0)
+        return
+
+    idx = int(time.time() // WEATHER_PAGE_SECONDS) % len(pages)
+    top, cond, rain = pages[idx]
+    if cfg.weather.label.strip():
+        top = f"{cfg.weather.label.strip()[:4]} {top}"
+
+    x, y, w, h = rect
+    tiny = theme.use_tiny_font
+    spacing = theme.spacing
+    line_h = theme.body_h + theme.line_gap
+    yy = y + 1
+
+    top_u = top.upper()
+    while top_u and text_width(top_u, tiny=tiny, spacing=spacing) > w - 2:
+        top_u = top_u[:-1]
+    draw_text(img, top_u, x + 1, yy, CYAN, tiny=tiny, spacing=spacing)
+
+    if line_h < h:
+        yy2 = y + 1 + line_h
+        # Cloudy 4% [rain icon]
+        left = cond.upper()
+        cursor = x + 1
+        if rain is not None:
+            left = f"{left} {rain}%"
+        max_w = (w - 10) if rain is not None else (w - 2)
+        while left and text_width(left, tiny=tiny, spacing=spacing) > max_w:
+            left = left[:-1]
+        cursor += draw_text(img, left, cursor, yy2, WHITE, tiny=tiny, spacing=spacing)
+        if rain is not None:
+            cursor += 2
+            if cursor + 5 < x + w - 1:
+                draw_tiny_rain_cloud(img, cursor, yy2)
 
 
 def _paint_f1(
@@ -180,7 +242,7 @@ def _paint_f1(
     race = _fetch_f1(http)
     f1 = cfg.f1
     sessions = filter_sessions(race, f1)
-    max_title = 12 if rect[2] >= 48 else (10 if rect[2] >= 36 else 8)
+    max_title = 10 if rect[2] >= 40 else 8
     title = race_title(race.race_name, max_title)
     row = 0
     if f1.show_race_name:
@@ -192,10 +254,10 @@ def _paint_f1(
 
     line_h = theme.body_h + theme.line_gap
     rows_left = max(0, (rect[3] - 2) // max(1, line_h) - row)
+    show_dt = f1.show_datetime and rect[2] >= 40 and rows_left >= 3
 
     if f1.mode == "list":
         for sess in sessions[: max(1, rows_left)]:
-            # Session + countdown on one line; never glue the date onto it
             if f1.show_countdown:
                 _line(
                     img,
@@ -209,46 +271,30 @@ def _paint_f1(
                 _line(img, rect, theme, sess.label, WHITE, row)
             row += 1
             rows_left -= 1
-            if f1.show_datetime and rows_left > 0:
+            if show_dt and rows_left > 0:
                 _line(img, rect, theme, _when_short(sess.start), YELLOW, row)
                 row += 1
                 rows_left -= 1
-                # Only show date for the first session when cramped
                 if rows_left <= 1:
                     break
         return
 
     sess = sessions[0]
-    # Separate lines: session → countdown → date/time (avoids "Q 3H 2M 25/1400")
-    if rows_left >= 3 or not f1.show_datetime:
-        _line(img, rect, theme, sess.label, CYAN, row)
-        row += 1
+    # Tight half-tile: "Q 3H 4M" on one line under the GP name
+    if rows_left <= 1 or rect[3] < 22:
+        bits = [sess.label]
         if f1.show_countdown:
-            _line(
-                img,
-                rect,
-                theme,
-                _countdown(sess.start),
-                WHITE,
-                row,
-                hero=rect[3] >= 28 and rows_left >= 3,
-            )
-            row += 1
-        if f1.show_datetime:
-            _line(img, rect, theme, _when_short(sess.start), YELLOW, row)
+            bits.append(_countdown(sess.start))
+        _line(img, rect, theme, " ".join(bits), CYAN, row)
         return
 
-    # Tight band: "Q 3H 2M" then "25 JUL 14:00"
-    head = sess.label
-    if f1.show_countdown:
-        head = f"{sess.label} {_countdown(sess.start)}"
-    _line(img, rect, theme, head, CYAN, row)
+    _line(img, rect, theme, sess.label, CYAN, row)
     row += 1
-    if f1.show_datetime:
-        when = _when_short(sess.start)
-        if text_width(when, tiny=theme.use_tiny_font, spacing=theme.spacing) > rect[2] - 2:
-            when = f"{_when_date(sess.start)} {_when_time(sess.start)}"
-        _line(img, rect, theme, when, YELLOW, row)
+    if f1.show_countdown:
+        _line(img, rect, theme, _countdown(sess.start), WHITE, row)
+        row += 1
+    if show_dt:
+        _line(img, rect, theme, _when_short(sess.start), YELLOW, row)
 
 
 def _paint_sensibo(
@@ -275,31 +321,34 @@ def _paint_sensibo(
                 break
     snap = fetch_snapshot(cfg.sensibo.api_key, pod_id, http)
     show = cfg.sensibo
-    row = 0
-    head = label
-    if show.show_temp and snap.temperature_c is not None:
-        head = f"{label} {int(round(snap.temperature_c))}°"
-    _line(img, rect, theme, head, CYAN, row)
-    row += 1
+    # Line 1: name · Line 2: temp + humidity
+    _line(img, rect, theme, label, CYAN, 0)
     bits: list[str] = []
+    if show.show_temp and snap.temperature_c is not None:
+        bits.append(f"{int(round(snap.temperature_c))}°")
     if show.show_humidity and snap.humidity is not None:
-        bits.append(f"{int(round(snap.humidity))}%")
+        bits.append(f"{int(round(snap.humidity))} %")
     if show.show_power:
-        bits.append("ON" if snap.ac_on else "OFF")
+        if snap.ac_on is True:
+            bits.append("ON")
+        elif snap.ac_on is False:
+            bits.append("OFF")
     if bits:
-        color = GREEN if snap.ac_on else RED
-        _line(img, rect, theme, " ".join(bits), color, row)
-        row += 1
+        if snap.ac_on is True:
+            color = GREEN
+        elif snap.ac_on is False:
+            color = ORANGE
+        else:
+            color = WHITE
+        # Explicit gap between temp and humidity: "24°  60 %"
+        _line(img, rect, theme, "  ".join(bits), color, 1)
     detail: list[str] = []
     if show.show_mode and snap.mode:
         detail.append(snap.mode[:4])
     if show.show_target and snap.target_c is not None:
         detail.append(f">{snap.target_c}C")
-    if detail and rect[3] >= 20:
-        _line(img, rect, theme, " ".join(detail), WHITE, row)
-        row += 1
-    if show.show_room and rect[3] >= 24 and rect[2] >= 40:
-        _line(img, rect, theme, snap.room.upper()[:10], WHITE, row)
+    if detail and rect[3] >= 22:
+        _line(img, rect, theme, " ".join(detail), WHITE, 2)
 
 
 def _paint_traffic(
@@ -317,17 +366,26 @@ def _paint_traffic(
     routes = cfg.traffic.routes
     if ref:
         routes = [r for r in routes if r.name.upper() == ref.upper()] or routes[:1]
-        eta = _fetch_route(routes[0], cfg.traffic.api_key, http)
+        eta = _fetch_route(
+            routes[0],
+            cfg.traffic.api_key,
+            http,
+            timezone=_traffic_timezone(cfg),
+        )
         color = _eta_color(eta.duration_traffic_min, eta.duration_min)
         _line(img, rect, theme, eta.name.upper(), CYAN, 0)
-        _line(img, rect, theme, f"{eta.duration_traffic_min}M", color, 1, hero=True)
+        _line(img, rect, theme, f"{eta.duration_traffic_min}M", color, 1)
         return
 
-    # Pack as many routes as the rect height allows
     line_h = theme.body_h + theme.line_gap
     max_rows = max(1, (rect[3] - 2) // line_h)
     for i, route in enumerate(routes[:max_rows]):
-        eta = _fetch_route(route, cfg.traffic.api_key, http)
+        eta = _fetch_route(
+            route,
+            cfg.traffic.api_key,
+            http,
+            timezone=_traffic_timezone(cfg),
+        )
         color = _eta_color(eta.duration_traffic_min, eta.duration_min)
         _line(
             img,
@@ -354,13 +412,17 @@ def _paint_countdown(
     if ref:
         targets = [t for t in targets if t.label.upper() == ref.upper()] or targets[:1]
     now = datetime.now(timezone.utc)
-    line_h = theme.body_h + theme.line_gap
-    max_rows = max(1, (rect[3] - 2) // max(1, line_h))
-    for i, target in enumerate(targets[:max_rows]):
-        remaining = (_parse_target(target.at) - now).total_seconds()
-        primary, _ = _format_remaining(remaining)
-        color = GREEN if remaining <= 0 else (RED if remaining < 86400 else ORANGE)
-        _line(img, rect, theme, f"{target.label} {primary}", color, i)
+    target = targets[0]
+    remaining = (_parse_target(target.at) - now).total_seconds()
+    primary, _ = _format_remaining(remaining)
+    # Compact remaining for narrow cells: "147D" instead of "147D 03H"
+    if remaining > 86400:
+        days = int(remaining) // 86400
+        primary = f"{days}D"
+    color = GREEN if remaining <= 0 else (RED if remaining < 86400 else ORANGE)
+    # Line 1 label, line 2 countdown (so the number isn't clipped off)
+    _line(img, rect, theme, target.label, color, 0)
+    _line(img, rect, theme, primary, WHITE, 1)
 
 
 def default_tiles(cfg: AppConfig) -> list[str]:

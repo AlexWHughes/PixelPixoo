@@ -12,6 +12,7 @@ import yaml
 
 from pixelpixoo.config import (
     AppConfig,
+    COUNTDOWN_LABEL_MAX,
     F1_SESSION_IDS,
     LABEL_MAX,
     load_config,
@@ -224,6 +225,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
             "text_scale": loaded.display.text_scale,
             "layout": loaded.display.layout,
             "show_header": loaded.display.show_header,
+            "show_borders": loaded.display.show_borders,
             "tiles": list(loaded.display.tiles),
             "row_pattern": list(loaded.display.row_pattern),
         },
@@ -234,6 +236,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
                 "layout": v.layout,
                 "text_scale": v.text_scale,
                 "show_header": v.show_header,
+                "show_borders": v.show_borders,
                 "tiles": list(v.tiles),
                 "row_pattern": list(v.row_pattern),
             }
@@ -383,7 +386,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
     for item in payload.get("countdown") or []:
         if not isinstance(item, dict):
             continue
-        label = str(item.get("label", "")).strip()[:LABEL_MAX]
+        label = str(item.get("label", "")).strip()[:COUNTDOWN_LABEL_MAX]
         at = str(item.get("at", "")).strip()
         if label and at:
             countdown.append({"label": label, "at": at})
@@ -404,6 +407,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         "text_scale": str(display.get("text_scale", "normal")),
         "layout": str(display.get("layout", "focus")),
         "show_header": bool(display.get("show_header", True)),
+        "show_borders": bool(display.get("show_borders", True)),
         "tiles": tiles,
         "row_pattern": row_pattern,
     }
@@ -423,6 +427,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
                 "layout": str(item.get("layout", "list")),
                 "text_scale": str(item.get("text_scale", display.get("text_scale", "compact"))),
                 "show_header": bool(item.get("show_header", True)),
+                "show_borders": bool(item.get("show_borders", display.get("show_borders", True))),
                 "tiles": [
                     str(t).strip()
                     for t in (item.get("tiles") or [])

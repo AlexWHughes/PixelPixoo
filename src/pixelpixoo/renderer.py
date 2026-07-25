@@ -63,6 +63,7 @@ _FONT_5X7: dict[str, tuple[str, ...]] = {
     "+": (".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."),
     ":": (".....", "..#..", "..#..", ".....", "..#..", "..#..", "....."),
     ".": (".....", ".....", ".....", ".....", ".....", "..#..", "..#.."),
+    ",": (".....", ".....", ".....", ".....", ".....", "..#..", ".#..."),
     "/": ("....#", "...#.", "..#..", ".#...", "#....", ".....", "....."),
     "%": ("#...#", "...#.", "..#..", ".#...", "#...#", ".....", "....."),
     "'": ("..#..", "..#..", ".....", ".....", ".....", ".....", "....."),
@@ -101,8 +102,9 @@ _FONT_3X5: dict[str, tuple[str, ...]] = {
     "J": ("..#", "..#", "..#", "#.#", ".#."),
     "K": ("#.#", "#.#", "##.", "#.#", "#.#"),
     "L": ("#..", "#..", "#..", "#..", "###"),
+    # M stays 3-wide; N is 4-wide so the diagonal + both stems stay readable
     "M": ("#.#", "###", "#.#", "#.#", "#.#"),
-    "N": ("#.#", "###", "###", "#.#", "#.#"),
+    "N": ("#..#", "##.#", "#.#.", "#.##", "#..#"),
     "O": (".#.", "#.#", "#.#", "#.#", ".#."),
     "P": ("##.", "#.#", "##.", "#..", "#.."),
     "Q": (".#.", "#.#", "#.#", ".#.", "..#"),
@@ -119,6 +121,7 @@ _FONT_3X5: dict[str, tuple[str, ...]] = {
     "+": ("...", ".#.", "###", ".#.", "..."),
     ":": ("...", ".#.", "...", ".#.", "..."),
     ".": ("...", "...", "...", "...", ".#."),
+    ",": ("...", "...", "...", ".#.", "#.."),
     "/": ("..#", "..#", ".#.", "#..", "#.."),
     "%": ("#.#", "..#", ".#.", "#..", "#.#"),
     "'": (".#.", ".#.", "...", "...", "..."),
@@ -127,6 +130,12 @@ _FONT_3X5: dict[str, tuple[str, ...]] = {
     "°": ("##.", "#.#", "##.", "...", "..."),
     "→": ("...", "#.#", "###", "#.#", "..."),
 }
+
+
+def _glyph_cols(pattern: tuple[str, ...], *, tiny: bool) -> int:
+    if pattern and pattern[0]:
+        return len(pattern[0])
+    return 3 if tiny else 5
 
 
 def draw_text(
@@ -144,7 +153,6 @@ def draw_text(
     draw = ImageDraw.Draw(img)
     cursor = x
     font = _FONT_3X5 if tiny else _FONT_5X7
-    gw = (3 if tiny else 5) * scale
     for ch in text.upper():
         pattern = font.get(ch) or font.get("?") or _FONT_5X7["?"]
         for row, bits in enumerate(pattern):
@@ -161,7 +169,7 @@ def draw_text(
                         [px, py, px + scale - 1, py + scale - 1],
                         fill=color,
                     )
-        cursor += gw + spacing
+        cursor += _glyph_cols(pattern, tiny=tiny) * scale + spacing
     return cursor - x - spacing if text else 0
 
 
@@ -170,8 +178,14 @@ def text_width(
 ) -> int:
     if not text:
         return 0
-    gw = (3 if tiny else 5) * scale
-    return len(text) * (gw + spacing) - spacing
+    font = _FONT_3X5 if tiny else _FONT_5X7
+    total = 0
+    for i, ch in enumerate(text.upper()):
+        pattern = font.get(ch) or font.get("?") or _FONT_5X7["?"]
+        total += _glyph_cols(pattern, tiny=tiny) * scale
+        if i < len(text) - 1:
+            total += spacing
+    return total
 
 
 def draw_centered(

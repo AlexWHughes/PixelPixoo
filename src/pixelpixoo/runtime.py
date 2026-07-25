@@ -42,12 +42,25 @@ def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
             return composite
 
     theme = theme_for(cfg.display.text_scale)
+    traffic_tz = "Australia/Melbourne"
+    if cfg.weather and cfg.weather.timezone:
+        traffic_tz = cfg.weather.timezone
+    elif cfg.schedule and cfg.schedule.timezone:
+        traffic_tz = cfg.schedule.timezone
     screens: list[Any] = []
     if cfg.weather is not None:
         screens.append(WeatherScreen(cfg.weather, client=http, theme=theme))
     if cfg.traffic is not None:
         for route in cfg.traffic.routes:
-            screens.append(TrafficScreen(route, cfg.traffic, client=http, theme=theme))
+            screens.append(
+                TrafficScreen(
+                    route,
+                    cfg.traffic,
+                    client=http,
+                    theme=theme,
+                    timezone=traffic_tz,
+                )
+            )
     if cfg.sensibo is not None:
         screens.extend(build_sensibo_screens(cfg.sensibo, http, theme=theme))
     if cfg.enable_f1 and cfg.f1.enabled:
@@ -89,6 +102,7 @@ class PixelRuntime:
         self._once = False
         self._status = RuntimeStatus()
         self._last_frames: dict[str, bytes] = {}
+        self._last_images: dict[str, Image.Image] = {}
 
     @property
     def status(self) -> RuntimeStatus:
@@ -266,6 +280,8 @@ class PixelRuntime:
 
                     screens = build_screens(cfg, http)
                     names = [getattr(s, "name", "?") for s in screens]
+                    with self._lock:
+                        self._last_images.clear()
                     self._update_status(
                         pixoo_ip=cfg.pixoo_ip,
                         screen_count=len(screens),
@@ -313,6 +329,7 @@ class PixelRuntime:
                         errors=self._status.errors + 1,
                     )
 
+                fade_spent = 0.0
                 try:
                     if preview_dir is not None:
                         preview_dir.mkdir(parents=True, exist_ok=True)
@@ -321,10 +338,12 @@ class PixelRuntime:
                         logger.info("Wrote preview %s", out)
                     else:
                         assert pixoo is not None
-                        pixoo.push_image(frame)
+                        prev = self._last_images.get(name)
+                        fade_spent = self._push_crossfade(pixoo, prev, frame)
                         logger.info("Pushed %s", name)
                     with self._lock:
                         self._last_frames[name] = _png_bytes(frame, scale=8)
+                        self._last_images[name] = frame.copy()
                     self._update_status(
                         last_screen=name,
                         last_push_at=datetime.now(timezone.utc).isoformat(),
@@ -341,7 +360,8 @@ class PixelRuntime:
                 if once and index >= len(screens):
                     break
 
-                self._interruptible_sleep(cfg.rotate_seconds)
+                hold = max(1.0, cfg.rotate_seconds - fade_spent)
+                self._interruptible_sleep(hold)
         finally:
             if pixoo is not None:
                 pixoo.close()
@@ -354,6 +374,35 @@ class PixelRuntime:
                     except Exception:
                         pass
             self._update_status(running=False, current_screen=None)
+
+    def _push_crossfade(
+        self,
+        pixoo: PixooClient,
+        prev: Image.Image | None,
+        frame: Image.Image,
+        *,
+        steps: int = 2,
+        step_sec: float = 0.04,
+    ) -> float:
+        """Quick blend from prev → frame. Returns wall time spent fading/pushing."""
+        frame_rgb = frame.convert("RGB")
+        started = time.monotonic()
+        if prev is None or prev.size != frame_rgb.size:
+            if self._stop.is_set() or self._reload.is_set():
+                return time.monotonic() - started
+            pixoo.push_image(frame_rgb)
+            return time.monotonic() - started
+        prev_rgb = prev.convert("RGB")
+        # One mid-frame then final — keeps transition soft without stuttering
+        for i in range(1, steps):
+            if self._stop.is_set() or self._reload.is_set():
+                return time.monotonic() - started
+            blended = Image.blend(prev_rgb, frame_rgb, i / steps)
+            pixoo.push_image(blended)
+            self._interruptible_sleep(step_sec)
+        if not self._stop.is_set() and not self._reload.is_set():
+            pixoo.push_image(frame_rgb)
+        return time.monotonic() - started
 
     def _interruptible_sleep(self, seconds: float) -> None:
         remaining = max(0.0, seconds)

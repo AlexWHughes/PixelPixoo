@@ -27,6 +27,7 @@ F1_SESSION_IDS = (
 
 # Stored label length; Pixoo paint clips by pixel width
 LABEL_MAX = 16
+COUNTDOWN_LABEL_MAX = 32
 
 
 @dataclass
@@ -98,6 +99,7 @@ class DisplayConfig:
     text_scale: str = "normal"  # tiny | compact | normal | large
     layout: str = "focus"  # focus | dense | split | dashboard | custom
     show_header: bool = True
+    show_borders: bool = True
     tiles: list[str] = field(default_factory=list)
     # Custom dense rows: each entry is 1 (full width) or 2 (split). Tiles fill L→R, T→B.
     row_pattern: list[int] = field(default_factory=list)
@@ -109,6 +111,7 @@ class ViewConfig:
     layout: str = "list"  # focus | list | split_h | split_v | grid_4 | rows
     text_scale: str = "compact"
     show_header: bool = True
+    show_borders: bool = True
     tiles: list[str] = field(default_factory=list)
     row_pattern: list[int] = field(default_factory=list)
 
@@ -263,7 +266,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     for item in raw.get("countdown") or []:
         if isinstance(item, dict) and "label" in item and "at" in item:
             countdown.append(
-                CountdownTarget(label=str(item["label"])[:LABEL_MAX], at=str(item["at"]))
+                CountdownTarget(
+                    label=str(item["label"])[:COUNTDOWN_LABEL_MAX], at=str(item["at"])
+                )
             )
 
     sensibo: SensiboConfig | None = None
@@ -313,6 +318,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         text_scale=coerce_text_scale(display_raw.get("text_scale", "normal")),
         layout=coerce_layout(display_raw.get("layout", "focus")),
         show_header=bool(display_raw.get("show_header", True)),
+        show_borders=bool(display_raw.get("show_borders", True)),
         tiles=[str(t).strip() for t in (display_raw.get("tiles") or []) if str(t).strip()],
         row_pattern=row_pattern,
     )
@@ -329,6 +335,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                     item.get("text_scale", display.text_scale)
                 ),
                 show_header=bool(item.get("show_header", display.show_header)),
+                show_borders=bool(item.get("show_borders", display.show_borders)),
                 tiles=[str(t).strip() for t in (item.get("tiles") or []) if str(t).strip()],
                 row_pattern=_parse_row_pattern(item.get("row_pattern")),
             )

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from PIL import Image
@@ -28,6 +31,12 @@ from pixelpixoo.theme import Theme, theme_for
 logger = logging.getLogger(__name__)
 
 DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
+# Peak commute: refresh often; overnight: slower to save Directions quota
+_TRAFFIC_TTL_DAY_SEC = 15 * 60
+_TRAFFIC_TTL_NIGHT_SEC = 30 * 60
+_TRAFFIC_DAY_START_HOUR = 6   # 06:00 inclusive
+_TRAFFIC_DAY_END_HOUR = 20    # 20:00 exclusive
+_DEFAULT_TZ = "Australia/Melbourne"
 
 
 @dataclass
@@ -38,11 +47,40 @@ class RouteEta:
     summary: str
 
 
+_route_cache: dict[str, tuple[float, RouteEta]] = {}
+
+
+def _cache_key(route: TrafficRoute) -> str:
+    return f"{route.name}|{route.origin}|{route.destination}"
+
+
+def _traffic_ttl_seconds(tz_name: str = _DEFAULT_TZ) -> float:
+    try:
+        now = datetime.now(ZoneInfo(tz_name))
+    except (ZoneInfoNotFoundError, ValueError):
+        now = datetime.now(ZoneInfo(_DEFAULT_TZ))
+    if _TRAFFIC_DAY_START_HOUR <= now.hour < _TRAFFIC_DAY_END_HOUR:
+        return float(_TRAFFIC_TTL_DAY_SEC)
+    return float(_TRAFFIC_TTL_NIGHT_SEC)
+
+
 def _fetch_route(
-    route: TrafficRoute, api_key: str, client: httpx.Client
+    route: TrafficRoute,
+    api_key: str,
+    client: httpx.Client,
+    *,
+    timezone: str = _DEFAULT_TZ,
 ) -> RouteEta:
     if not api_key:
         raise RuntimeError("GOOGLE_MAPS_API_KEY not set")
+
+    key = _cache_key(route)
+    now_mono = time.monotonic()
+    cached = _route_cache.get(key)
+    ttl = _traffic_ttl_seconds(timezone)
+    if cached and now_mono - cached[0] < ttl:
+        return cached[1]
+
     params = {
         "origin": route.origin,
         "destination": route.destination,
@@ -64,12 +102,20 @@ def _fetch_route(
     else:
         traffic = duration
     summary = str(payload["routes"][0].get("summary", ""))
-    return RouteEta(
+    eta = RouteEta(
         name=route.name,
         duration_traffic_min=max(1, round(traffic / 60)),
         duration_min=max(1, round(duration / 60)),
         summary=summary,
     )
+    _route_cache[key] = (time.monotonic(), eta)
+    logger.debug(
+        "Traffic refresh %s → %sm (ttl %.0fs)",
+        route.name,
+        eta.duration_traffic_min,
+        ttl,
+    )
+    return eta
 
 
 def _eta_color(traffic_min: int, base_min: int) -> tuple[int, int, int]:
@@ -89,10 +135,13 @@ class TrafficScreen:
         cfg: TrafficConfig,
         client: httpx.Client | None = None,
         theme: Theme | None = None,
+        *,
+        timezone: str = _DEFAULT_TZ,
     ) -> None:
         self.route = route
         self.cfg = cfg
         self.theme = theme or theme_for("normal")
+        self.timezone = timezone or _DEFAULT_TZ
         self.name = f"traffic:{route.name}"
         self._client = client or httpx.Client(timeout=20.0)
         self._owns_client = client is None
@@ -104,7 +153,12 @@ class TrafficScreen:
 
     def render(self) -> Image.Image:
         try:
-            eta = _fetch_route(self.route, self.cfg.api_key, self._client)
+            eta = _fetch_route(
+                self.route,
+                self.cfg.api_key,
+                self._client,
+                timezone=self.timezone,
+            )
             img = self._paint(eta)
             self._last = img.copy()
             return img

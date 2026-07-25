@@ -40,6 +40,7 @@ class DayForecast:
     high: float
     low: float
     weather_code: int
+    rain_chance: int | None = None
 
 
 @dataclass
@@ -48,6 +49,7 @@ class WeatherData:
     weather_code: int
     high: float
     low: float
+    rain_chance: int | None = None
     forecast: list[DayForecast] = field(default_factory=list)
 
 
@@ -57,7 +59,10 @@ def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
         "latitude": cfg.latitude,
         "longitude": cfg.longitude,
         "current": "temperature_2m,weather_code",
-        "daily": "temperature_2m_max,temperature_2m_min,weather_code",
+        "daily": (
+            "temperature_2m_max,temperature_2m_min,weather_code,"
+            "precipitation_probability_max"
+        ),
         "timezone": cfg.timezone,
         "forecast_days": days,
     }
@@ -71,20 +76,27 @@ def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
     highs = daily.get("temperature_2m_max") or []
     lows = daily.get("temperature_2m_min") or []
     codes = daily.get("weather_code") or []
+    rains = daily.get("precipitation_probability_max") or []
     for i, day_str in enumerate(dates):
+        rain = None
+        if i < len(rains) and rains[i] is not None:
+            rain = int(round(float(rains[i])))
         forecast.append(
             DayForecast(
                 day=date.fromisoformat(str(day_str)[:10]),
                 high=float(highs[i]),
                 low=float(lows[i]),
                 weather_code=int(codes[i]) if i < len(codes) else 0,
+                rain_chance=rain,
             )
         )
+    today_rain = forecast[0].rain_chance if forecast else None
     return WeatherData(
         temperature=float(current["temperature_2m"]),
         weather_code=int(current["weather_code"]),
         high=float(highs[0]) if highs else float(current["temperature_2m"]),
         low=float(lows[0]) if lows else float(current["temperature_2m"]),
+        rain_chance=today_rain,
         forecast=forecast,
     )
 
@@ -95,7 +107,7 @@ def _code_label(code: int) -> str:
     if code in (1, 2):
         return "FAIR"
     if code == 3:
-        return "CLOUD"
+        return "CLOUDY"
     if code in (45, 48):
         return "FOG"
     if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
@@ -104,7 +116,7 @@ def _code_label(code: int) -> str:
         return "SNOW"
     if code in (95, 96, 99):
         return "STORM"
-    return "WX"
+    return "CLOUDY"
 
 
 def _code_short(code: int) -> str:
@@ -112,7 +124,7 @@ def _code_short(code: int) -> str:
     return {
         "CLEAR": "CLR",
         "FAIR": "FAIR",
-        "CLOUD": "CLD",
+        "CLOUDY": "CLD",
         "FOG": "FOG",
         "RAIN": "RAIN",
         "SNOW": "SNOW",
@@ -124,14 +136,23 @@ def _weekday(d: date) -> str:
     return d.strftime("%a").upper()[:2]
 
 
-def _day_label(d: date, *, today: date | None = None) -> str:
-    """Top-line date, e.g. TODAY / SAT 26."""
-    ref = today or date.today()
-    if d == ref:
-        return "TODAY"
-    if d == ref + timedelta(days=1):
-        return "TMRO"
-    return f"{d.strftime('%a').upper()[:3]} {d.day}"
+def _ordinal(day: int) -> str:
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
+
+
+_WEEKDAYS = ("Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun")
+_WEEKDAYS_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _day_label(d: date, *, today: date | None = None, short: bool = False) -> str:
+    """Top-line date, e.g. Sat 25th."""
+    del today
+    name = _WEEKDAYS_SHORT[d.weekday()] if short else _WEEKDAYS[d.weekday()]
+    return f"{name} {_ordinal(d.day)}"
 
 
 def _draw_icon(img: Image.Image, code: int, ox: int, oy: int) -> None:
@@ -165,6 +186,34 @@ def _draw_icon(img: Image.Image, code: int, ox: int, oy: int) -> None:
         draw.ellipse([ox + 4, oy + 2, ox + 18, oy + 12], fill=GRAY)
         for x in (ox + 6, ox + 10, ox + 14):
             draw.line([(x, oy + 14), (x - 1, oy + 20)], fill=BLUE)
+
+
+# 5×5 rain-cloud glyph (cloud + two drip pixels)
+_TINY_RAIN_CLOUD = (
+    ".##..",
+    "#####",
+    "#####",
+    ".#.#.",
+    ".#.#.",
+)
+
+
+def draw_tiny_rain_cloud(
+    img: Image.Image,
+    x: int,
+    y: int,
+    *,
+    cloud: tuple[int, int, int] = (160, 175, 190),
+    rain: tuple[int, int, int] = (70, 150, 255),
+) -> int:
+    """Draw a 5×5 rain cloud. Returns width consumed (5)."""
+    for row, bits in enumerate(_TINY_RAIN_CLOUD):
+        for col, bit in enumerate(bits):
+            if bit != "#":
+                continue
+            color = rain if row >= 3 else cloud
+            set_pixel(img, x + col, y + row, color)
+    return 5
 
 
 class WeatherScreen:

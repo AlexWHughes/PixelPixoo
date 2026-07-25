@@ -88,6 +88,17 @@ function fromDatetimeLocal(value) {
   );
 }
 
+function addFromTemplate(tplId, listId, values = {}) {
+  const node = $(tplId).content.firstElementChild.cloneNode(true);
+  for (const [key, val] of Object.entries(values)) {
+    const input = node.querySelector(`[data-f="${key}"]`);
+    if (input) input.value = val ?? "";
+  }
+  node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
+  $(listId).appendChild(node);
+  return node;
+}
+
 function addCountdownRow(values = {}) {
   const node = $("#tplCountdown").content.firstElementChild.cloneNode(true);
   node.querySelector('[data-f="label"]').value = values.label || "";
@@ -239,6 +250,7 @@ function fillConfig(cfg) {
     el.checked = el.value === layout;
   });
   form.show_header.checked = cfg.display?.show_header !== false;
+  form.show_borders.checked = cfg.display?.show_borders !== false;
   selectedTiles = [...(cfg.display?.tiles || [])];
   // Ensure selected tiles appear in options
   for (const id of selectedTiles) {
@@ -361,6 +373,7 @@ function collectPayload() {
         $$('input[name="text_scale"]').find((el) => el.checked)?.value || "normal",
       layout: $$('input[name="layout"]').find((el) => el.checked)?.value || "focus",
       show_header: form.show_header.checked,
+      show_borders: form.show_borders.checked,
       tiles: [...selectedTiles],
       row_pattern: [...rowPattern],
     },
