@@ -239,7 +239,11 @@ class F1Screen:
         t = self.theme
         cfg = self.cfg
         img = new_canvas(BLACK)
-        header = race_title(race.race_name, 12 if t.use_tiny_font else 10)
+        header = (
+            race_title(race.race_name, 12 if t.use_tiny_font else 10)
+            if cfg.show_race_name
+            else "F1"
+        )
         draw_label_bar(
             img, header, RED, height=t.header_h, tiny=t.use_tiny_font
         )
@@ -314,7 +318,7 @@ class F1Screen:
         if cfg.show_datetime:
             when = _when_short(sess.start)
             if text_width(when, tiny=t.use_tiny_font, spacing=t.spacing) > 60:
-                when = f"{_when_date(sess.start)} {_when_time(sess.start)}"
+                when = _when_time(sess.start)
             if y + t.body_h <= 62:
                 draw_centered(
                     img, when, y, WHITE, tiny=t.use_tiny_font, spacing=t.spacing

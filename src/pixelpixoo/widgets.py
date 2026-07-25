@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from PIL import Image, ImageDraw
 
-from pixelpixoo.config import AppConfig
+from pixelpixoo.config import AppConfig, resolve_app_timezone
 from pixelpixoo.renderer import (
     CYAN,
     DIM,
@@ -56,11 +56,7 @@ WEATHER_PAGE_SECONDS = 8.0
 
 
 def _traffic_timezone(cfg: AppConfig) -> str:
-    if cfg.weather and cfg.weather.timezone:
-        return cfg.weather.timezone
-    if cfg.schedule and cfg.schedule.timezone:
-        return cfg.schedule.timezone
-    return "Australia/Sydney"
+    return resolve_app_timezone(cfg)
 
 
 def _clip_text(text: str, max_w: int, *, tiny: bool, spacing: int) -> str:
@@ -207,12 +203,20 @@ def _paint_weather(
         today = now.date()
 
     clock = now.strftime("%H:%M")
+    label_raw = cfg.weather.label.strip()[:4]
+    label_prefix = f"{label_raw} " if label_raw else ""
 
     def _top_line(day: date, low: float, high: float) -> str:
         lo, hi = int(round(low)), int(round(high))
         tiny = theme.use_tiny_font
         spacing = theme.spacing
         limit = rect[2] - 2
+        prefix_w = (
+            text_width(label_prefix.upper(), tiny=tiny, spacing=spacing)
+            if label_prefix
+            else 0
+        )
+        avail = max(8, limit - prefix_w)
         candidates = [
             f"{_day_label(day)} {clock} {lo}° / {hi}°",
             f"{_day_label(day)} {clock} {lo}°/{hi}°",
@@ -220,9 +224,10 @@ def _paint_weather(
             f"{_WEEKDAYS_SHORT[day.weekday()]} {day.day} {clock} {lo}°/{hi}°",
         ]
         for candidate in candidates:
-            if text_width(candidate.upper(), tiny=tiny, spacing=spacing) <= limit:
-                return candidate
-        return candidates[-1]
+            if text_width(candidate.upper(), tiny=tiny, spacing=spacing) <= avail:
+                return f"{label_prefix}{candidate}" if label_prefix else candidate
+        chosen = candidates[-1]
+        return f"{label_prefix}{chosen}" if label_prefix else chosen
 
     # Pages: "Sat 25th 21:16 10° / 14°" / "Cloudy 4%" + rain icon
     pages: list[tuple[str, str, int | None]] = []
@@ -251,8 +256,6 @@ def _paint_weather(
 
     idx = int(time.time() // WEATHER_PAGE_SECONDS) % len(pages)
     top, cond, rain = pages[idx]
-    if cfg.weather.label.strip():
-        top = f"{cfg.weather.label.strip()[:4]} {top}"
 
     x, y, w, h = rect
     tiny = theme.use_tiny_font
@@ -466,9 +469,9 @@ def _paint_countdown(
         days = int(remaining) // 86400
         primary = f"{days}D"
     color = GREEN if remaining <= 0 else (RED if remaining < 86400 else ORANGE)
-    # Line 1 label, line 2 countdown (so the number isn't clipped off)
-    _line(img, rect, theme, target.label, color, 0)
-    _line(img, rect, theme, primary, WHITE, 1)
+    # Line 1 label (neutral), line 2 countdown coloured by urgency
+    _line(img, rect, theme, target.label, WHITE, 0)
+    _line(img, rect, theme, primary, color, 1)
 
 
 def _paint_bins(

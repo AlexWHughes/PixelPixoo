@@ -154,6 +154,15 @@ class AppConfig:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
 
+def resolve_app_timezone(cfg: AppConfig, *, default: str = "Australia/Sydney") -> str:
+    """Prefer weather TZ, then schedule TZ, then default (used by traffic TTL etc.)."""
+    if cfg.weather and cfg.weather.timezone:
+        return cfg.weather.timezone
+    if cfg.schedule and cfg.schedule.timezone:
+        return cfg.schedule.timezone
+    return default
+
+
 def _require(data: dict[str, Any], key: str) -> Any:
     if key not in data or data[key] in (None, ""):
         raise ValueError(f"Missing required config key: {key}")
@@ -240,7 +249,10 @@ def _parse_bins(raw: object) -> BinsConfig | None:
         weekday = parse_weekday(item.get("weekday", item.get("day")))
         if not label or weekday is None:
             continue
-        every = int(item.get("every_weeks", item.get("every", 1)) or 1)
+        try:
+            every = int(item.get("every_weeks", item.get("every", 1)) or 1)
+        except (TypeError, ValueError):
+            every = 1
         every = max(1, min(8, every))
         anchor = str(item.get("anchor", "") or "").strip()
         if every > 1 and not _parse_anchor(anchor):
@@ -260,7 +272,10 @@ def _parse_bins(raw: object) -> BinsConfig | None:
         )
     if not streams:
         return None
-    lead = int(raw.get("lead_days", 1))
+    try:
+        lead = int(raw.get("lead_days", 1))
+    except (TypeError, ValueError):
+        lead = 1
     lead = max(0, min(6, lead))
     eve = raw.get("eve_before", True)
     if isinstance(eve, str):

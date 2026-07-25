@@ -520,8 +520,10 @@ def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
         f1.pop("session_options", None)
         payload["f1"] = f1
 
-    payload["display"] = _normalize_display_export(payload.get("display"))
-    payload["views"] = _normalize_views_export(payload.get("views"))
+    if "display" in payload:
+        payload["display"] = _normalize_display_export(payload.get("display"))
+    if "views" in payload:
+        payload["views"] = _normalize_views_export(payload.get("views"))
 
     sensibo_block = payload.get("sensibo")
     if isinstance(sensibo_block, dict):
