@@ -112,6 +112,7 @@ class CompositeScreen:
     def _paint_list(
         self, img: Image.Image, tiles: list[str], theme: Theme, *, header: bool
     ) -> None:
+        borders = self.view.show_borders
         top = theme.header_h if header else 0
         usable = 64 - top
         min_band = max(theme.body_h + theme.line_gap + 1, 8)
@@ -130,7 +131,7 @@ class CompositeScreen:
                 self._client,
                 outline=False,
             )
-            if i > 0:
+            if borders and i > 0:
                 ImageDraw.Draw(img).line([(0, y), (63, y)], fill=(36, 42, 52))
 
 

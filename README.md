@@ -39,7 +39,7 @@ Also included:
 ### Docker (local bind mounts)
 
 ```bash
-git clone https://github.com/YOUR_USER/PixelPixoo.git
+git clone https://github.com/AlexWHughes/PixelPixoo.git
 cd PixelPixoo
 
 cp config.example.yaml config.yaml
@@ -64,7 +64,7 @@ Use `docker-compose.yml` alone. On first boot the entrypoint seeds `config.examp
 3. Open the web UI and finish setup (tiles, routes, devices).
 4. Use **Export** / **Import** to back up or move a full config (includes secrets — treat the file carefully).
 
-If the container cannot reach the Pixoo through Docker bridge networking, uncomment `network_mode: host` in Compose (and adjust port publishing accordingly).
+Default Compose uses **bridge** networking (published web port only). If the container cannot reach the Pixoo on your LAN that way, switch to **host** networking: uncomment `network_mode: host` in Compose and drop the `ports:` mapping (host mode binds the container’s ports directly on the host).
 
 ### Preview mode (no device)
 
@@ -91,7 +91,7 @@ export PIXELPIXOO_CONFIG=./config.yaml PIXELPIXOO_ENV=./.env
 PYTHONPATH=src python -m pixelpixoo
 ```
 
-UI defaults to `http://0.0.0.0:8080` when run this way (`PIXELPIXOO_WEB_PORT`).
+Open the UI at [http://localhost:8080](http://localhost:8080) (override with `PIXELPIXOO_WEB_PORT`).
 
 ## Configuration
 

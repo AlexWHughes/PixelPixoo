@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 from PIL import Image
 
-from pixelpixoo.config import AppConfig, load_config
+from pixelpixoo.config import AppConfig, load_config, resolve_app_timezone
 from pixelpixoo.pixoo_client import PixooClient
 from pixelpixoo.renderer import error_frame
 from pixelpixoo.schedule import is_schedule_active
@@ -42,11 +42,7 @@ def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
             return composite
 
     theme = theme_for(cfg.display.text_scale)
-    traffic_tz = "Australia/Sydney"
-    if cfg.weather and cfg.weather.timezone:
-        traffic_tz = cfg.weather.timezone
-    elif cfg.schedule and cfg.schedule.timezone:
-        traffic_tz = cfg.schedule.timezone
+    traffic_tz = resolve_app_timezone(cfg)
     screens: list[Any] = []
     if cfg.weather is not None:
         screens.append(WeatherScreen(cfg.weather, client=http, theme=theme))
@@ -102,7 +98,7 @@ class PixelRuntime:
         self._once = False
         self._status = RuntimeStatus()
         self._last_frames: dict[str, bytes] = {}
-        self._last_images: dict[str, Image.Image] = {}
+        self._last_pushed: Image.Image | None = None
 
     @property
     def status(self) -> RuntimeStatus:
@@ -281,7 +277,7 @@ class PixelRuntime:
                     screens = build_screens(cfg, http)
                     names = [getattr(s, "name", "?") for s in screens]
                     with self._lock:
-                        self._last_images.clear()
+                        self._last_pushed = None
                     self._update_status(
                         pixoo_ip=cfg.pixoo_ip,
                         screen_count=len(screens),
@@ -338,12 +334,13 @@ class PixelRuntime:
                         logger.info("Wrote preview %s", out)
                     else:
                         assert pixoo is not None
-                        prev = self._last_images.get(name)
+                        with self._lock:
+                            prev = self._last_pushed
                         fade_spent = self._push_crossfade(pixoo, prev, frame)
                         logger.info("Pushed %s", name)
                     with self._lock:
                         self._last_frames[name] = _png_bytes(frame, scale=8)
-                        self._last_images[name] = frame.copy()
+                        self._last_pushed = frame.copy()
                     self._update_status(
                         last_screen=name,
                         last_push_at=datetime.now(timezone.utc).isoformat(),
