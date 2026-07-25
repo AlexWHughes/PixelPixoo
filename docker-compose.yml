@@ -3,8 +3,8 @@ services:
     build: .
     container_name: pixelpixoo
     restart: unless-stopped
-    env_file:
-      - .env
+    # Secrets: set as Portainer stack env vars (GitHub deploy), or put them in a
+    # local .env for compose interpolation. Do not commit .env.
     environment:
       PIXELPIXOO_CONFIG: /config/config.yaml
       PIXELPIXOO_ENV: /config/.env
@@ -19,8 +19,12 @@ services:
     ports:
       - "${PIXELPIXOO_WEB_PORT:-8787}:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml
-      - ./.env:/config/.env
-      - ./preview:/preview
+      # Named volumes so GitHub clones don't need gitignored config/.env files
+      - pixelpixoo_config:/config
+      - pixelpixoo_preview:/preview
     # Host networking can help on some Proxmox/LXC setups if bridge routing is awkward:
     # network_mode: host
+
+volumes:
+  pixelpixoo_config:
+  pixelpixoo_preview:

@@ -19,9 +19,11 @@ cp config.example.yaml config.yaml
 cp .env.example .env
 # edit .env: PIXOO_IP, SENSIBO_API_KEY, GOOGLE_MAPS_API_KEY
 
-docker compose up --build -d
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
 open http://localhost:8787
 ```
+
+Without `docker-compose.local.yml`, Compose uses named volumes and seeds `config.example.yaml` on first start (same path as Portainer/GitHub).
 
 Web UI features:
 - Device IP, brightness, rotate interval, preview vs live push
@@ -32,7 +34,7 @@ Web UI features:
 - Live loop status + nearest-neighbour screen previews
 - **Save & apply** hot-reloads the push loop (no container restart)
 
-`.env` is gitignored. Config + `.env` are mounted read/write so the UI can persist changes.
+`.env` and `config.yaml` are gitignored. Local bind mounts (via `docker-compose.local.yml`) or the `pixelpixoo_config` volume keep UI saves durable.
 
 ## Preview vs live
 
@@ -54,6 +56,16 @@ Web UI features:
 
 OpenAPI: `/api/docs`
 
-## Portainer
+## Portainer (GitHub)
 
-Same compose file. Publish host port `8787` → container `8080` (change `PIXELPIXOO_WEB_PORT` in `.env`). Ensure the stack can reach the Pixoo on the LAN (`network_mode: host` if bridge routing fails).
+Deploy from the repo — no `.env` / `config.yaml` in git required.
+
+1. Stack → **Repository** → this GitHub URL + `docker-compose.yml`
+2. Under **Environment variables**, set at least:
+   - `PIXOO_IP`
+   - `GOOGLE_MAPS_API_KEY` (if using traffic)
+   - `SENSIBO_API_KEY` (if using Sensibo)
+   - optional: `PIXELPIXOO_WEB_PORT=8787`
+3. Deploy. First boot seeds `/config` from `config.example.yaml`; further UI edits persist in the `pixelpixoo_config` volume.
+
+Publish host port `8787` → container `8080`. Ensure the stack can reach the Pixoo on the LAN (`network_mode: host` if bridge routing fails).
