@@ -111,7 +111,7 @@ The example weather location is **Sydney, Australia** (`-33.8688, 151.2093`). Ch
 ### Web UI
 
 - Save & apply — writes config + secrets and hot-reloads the push loop
-- Export / Import — full JSON backup (tiles, text scale, secrets)
+- Backup / Restore — saves live UI then downloads/restores full JSON (display, views, screens, secrets)
 - Sensibo discover + pin, Pixoo connection test, live frame previews
 
 ## HTTP API
@@ -122,9 +122,9 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 |--------|------|---------|
 | GET | `/api/status` | Loop health |
 | GET/PUT | `/api/config` | Read/write config (secrets masked on GET) |
-| GET | `/api/config/export` | Download **saved** full JSON (includes API keys) |
-| POST | `/api/config/export` | Download **live UI** full JSON |
-| POST | `/api/config/import` | Replace config from export JSON |
+| GET | `/api/config/export` | Download full **saved** backup (config, views, yaml snapshot, API keys) |
+| POST | `/api/config/export` | Build backup from a live UI form body (no disk write) |
+| POST | `/api/config/import` | Restore full config from backup JSON |
 | POST | `/api/reload` | Reload push loop |
 | POST | `/api/pixoo/test` | Ping device |
 | GET | `/api/sensibo/discover` | List pods |

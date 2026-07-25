@@ -24,8 +24,8 @@
         <span class="dot"></span>
         <span id="runLabel">…</span>
       </div>
-      <button type="button" class="btn ghost" id="btnExportConfig" title="Download full config JSON (includes API keys)">Export</button>
-      <button type="button" class="btn ghost" id="btnImportConfig" title="Replace config from a JSON backup">Import</button>
+      <button type="button" class="btn ghost" id="btnExportConfig" title="Save current UI, then download full backup JSON (config, views, secrets)">Backup</button>
+      <button type="button" class="btn ghost" id="btnImportConfig" title="Restore full config from a backup JSON">Restore</button>
       <input type="file" id="importConfigFile" accept="application/json,.json" hidden />
       <button type="button" class="btn ghost" id="btnReload">Reload loop</button>
       <button type="button" class="btn primary" id="btnSave">Save &amp; apply</button>
@@ -431,7 +431,7 @@
 
         <footer class="form-foot">
           <button type="submit" class="btn primary wide">Save &amp; apply</button>
-          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads the push loop without restarting the container. <strong>Export</strong> downloads the full live UI config (tiles, text scale, layout, screens, secrets). <strong>Import</strong> restores that same bundle.</p>
+          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads. <strong>Backup</strong> saves the live UI then downloads the full config (display, views, screens, secrets). <strong>Restore</strong> applies that backup.</p>
         </footer>
       </form>
     </div>
