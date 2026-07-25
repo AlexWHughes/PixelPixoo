@@ -1,75 +1,152 @@
 # PixelPixoo
 
-Push-loop dashboard for a **Divoom Pixoo 64**, plus a local config web UI.
+Push-loop dashboard for a [Divoom Pixoo 64](https://divoom.com/) — weather, commute times, climate, F1, countdowns, and more — with a built-in web UI.
 
-## Screens
+Frames are rendered as 64×64 RGB and POSTed to the device on your LAN. No cloud middleman for the display path.
 
-| Screen | Source | Notes |
-|--------|--------|--------|
-| Weather | [Open-Meteo](https://open-meteo.com/) | No API key |
-| Traffic | Google Directions (`departure_time=now`) | One slide per route; needs `GOOGLE_MAPS_API_KEY` |
-| Sensibo | [Sensibo API v2](http://static.sensibo.com/SensiboAPI_v2.yaml) | Room temp/humidity + AC state; needs `SENSIBO_API_KEY` |
-| Next F1 | [Jolpica](https://api.jolpi.ca/) | No API key |
-| Countdown | Config dates | One slide per target |
-| Bin night | Config weekly schedule | Conditional tile — only when put-out is within `lead_days` |
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Docker](https://img.shields.io/badge/deploy-docker-2496ED)
 
-## Quick start (local Docker)
+## Features
+
+| Screen | Source | API key |
+|--------|--------|---------|
+| Weather + multi-day forecast | [Open-Meteo](https://open-meteo.com/) | No |
+| Traffic / commute ETA | [Google Directions](https://developers.google.com/maps/documentation/directions) | Yes (`GOOGLE_MAPS_API_KEY`) |
+| Sensibo room climate | [Sensibo API](https://sensibo.github.io/) | Yes (`SENSIBO_API_KEY`) |
+| Next F1 session | [Jolpica](https://api.jolpi.ca/) (Ergast-compatible) | No |
+| Countdown | Config dates | No |
+| Bin night | Weekly / fortnightly schedule | No (conditional tile) |
+
+Also included:
+
+- Custom multi-tile layouts on a single 64×64 frame (`row_pattern`, tile picker)
+- Tiny / compact / normal text scales for dense dashboards
+- Crossfade between frames, brightness + rotate interval
+- Optional on/off schedule (timezone-aware windows)
+- Config web UI with live previews, secret masking, export/import
+- Docker + Portainer-friendly deploy (named volumes; no secrets in git)
+
+## Quick start
+
+### Requirements
+
+- Docker (recommended), or Python **3.11+**
+- A Pixoo 64 reachable on your LAN (for live push)
+- Optional: Google Maps + Sensibo API keys for those screens
+
+### Docker (local bind mounts)
 
 ```bash
+git clone https://github.com/YOUR_USER/PixelPixoo.git
+cd PixelPixoo
+
 cp config.example.yaml config.yaml
 cp .env.example .env
-# edit .env: PIXOO_IP, SENSIBO_API_KEY, GOOGLE_MAPS_API_KEY
+# Edit .env — at least PIXOO_IP. Add API keys as needed.
+# Edit config.yaml — weather lat/lon (example is Sydney CBD).
 
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
 open http://localhost:8787
 ```
 
-Without `docker-compose.local.yml`, Compose uses named volumes and seeds `config.example.yaml` on first start (same path as Portainer/GitHub).
+### Docker (named volumes — Portainer / GitHub)
 
-Web UI features:
-- Device IP, brightness, rotate interval, preview vs live push
-- Weather / traffic routes / Sensibo pins / F1 / countdowns / bin night
-- Masked secrets (paste to replace; clear checkbox to wipe)
-- Sensibo discover + pin
-- Pixoo connection test
-- Live loop status + nearest-neighbour screen previews
-- **Save & apply** hot-reloads the push loop (no container restart)
+Use `docker-compose.yml` alone. On first boot the entrypoint seeds `config.example.yaml` into the `pixelpixoo_config` volume.
 
-`.env` and `config.yaml` are gitignored. Local bind mounts (via `docker-compose.local.yml`) or the `pixelpixoo_config` volume keep UI saves durable.
+1. Deploy the stack from this repository.
+2. Set environment variables in the UI (or Compose):
+   - `PIXOO_IP` (required for live push)
+   - `GOOGLE_MAPS_API_KEY` (traffic)
+   - `SENSIBO_API_KEY` (Sensibo)
+   - `PIXELPIXOO_WEB_PORT=8787` (optional host port)
+3. Open the web UI and finish setup (tiles, routes, devices).
+4. Use **Export** / **Import** to back up or move a full config (includes secrets — treat the file carefully).
 
-## Preview vs live
+If the container cannot reach the Pixoo through Docker bridge networking, uncomment `network_mode: host` in Compose (and adjust port publishing accordingly).
 
-| Mode | How |
-|------|-----|
-| Preview PNGs | Set `PIXELPIXOO_PREVIEW=/preview` in `.env` or toggle in UI |
-| Live push | Clear preview mode, set real `PIXOO_IP` |
+### Preview mode (no device)
 
-## API (for scripting)
+```bash
+# in .env
+PIXELPIXOO_PREVIEW=/preview
+# PIXELPIXOO_ONCE=true   # render once and exit (optional)
+```
+
+Or toggle preview in the web UI. PNGs land under the preview volume / `./preview`.
+
+### Python (without Docker)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+cp config.example.yaml config.yaml
+cp .env.example .env
+# edit both files
+
+export PIXELPIXOO_CONFIG=./config.yaml PIXELPIXOO_ENV=./.env
+PYTHONPATH=src python -m pixelpixoo
+```
+
+UI defaults to `http://0.0.0.0:8080` when run this way (`PIXELPIXOO_WEB_PORT`).
+
+## Configuration
+
+| File | Purpose | In git? |
+|------|---------|---------|
+| `config.yaml` | Screens, layout, schedule | **No** (gitignored) — start from `config.example.yaml` |
+| `.env` | `PIXOO_IP`, API keys | **No** (gitignored) — start from `.env.example` |
+
+The example weather location is **Sydney, Australia** (`-33.8688, 151.2093`). Change lat/lon/timezone to yours.
+
+### Layout tips
+
+- `display.layout: custom` + `row_pattern: [1, 2, 2, 2]` = one full-width row, then three split rows
+- Tile ids: `weather`, `sensibo`, `sensibo:Living`, `traffic:WORK`, `f1`, `countdown`, `bins`, …
+- `text_scale: tiny` packs the most onto 64×64
+
+### Web UI
+
+- Save & apply — writes config + secrets and hot-reloads the push loop
+- Export / Import — full JSON backup (tiles, text scale, secrets)
+- Sensibo discover + pin, Pixoo connection test, live frame previews
+
+## HTTP API
+
+Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/status` | Loop health |
 | GET/PUT | `/api/config` | Read/write config (secrets masked on GET) |
-| GET | `/api/config/export` | Download full **saved** JSON backup (includes API keys) |
-| POST | `/api/config/export` | Download full **live UI** JSON (tiles, text scale, layout, screens, secrets) |
+| GET | `/api/config/export` | Download **saved** full JSON (includes API keys) |
+| POST | `/api/config/export` | Download **live UI** full JSON |
 | POST | `/api/config/import` | Replace config from export JSON |
-| POST | `/api/reload` | Reload loop |
+| POST | `/api/reload` | Reload push loop |
 | POST | `/api/pixoo/test` | Ping device |
 | GET | `/api/sensibo/discover` | List pods |
 | GET | `/api/preview/{name}` | PNG frame |
 
-OpenAPI: `/api/docs`
+## Security notes
 
-## Portainer (GitHub)
+- Never commit `.env` or `config.yaml` — they are gitignored for a reason.
+- Export JSON contains **raw API keys**. Store backups privately.
+- The web UI has **no authentication**. Bind it to a trusted LAN/VPN only (or put it behind a reverse proxy with auth).
+- Rotate Google / Sensibo keys if they were ever pushed to a remote or shared in an export.
 
-Deploy from the repo — no `.env` / `config.yaml` in git required.
+## Development
 
-1. Stack → **Repository** → this GitHub URL + `docker-compose.yml`
-2. Under **Environment variables**, set at least:
-   - `PIXOO_IP`
-   - `GOOGLE_MAPS_API_KEY` (if using traffic)
-   - `SENSIBO_API_KEY` (if using Sensibo)
-   - optional: `PIXELPIXOO_WEB_PORT=8787`
-3. Deploy. First boot seeds `/config` from `config.example.yaml`; further UI edits persist in the `pixelpixoo_config` volume.
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+PYTHONPATH=src python -m pixelpixoo
+```
 
-Publish host port `8787` → container `8080`. Ensure the stack can reach the Pixoo on the LAN (`network_mode: host` if bridge routing fails).
+Package layout lives under `src/pixelpixoo/`. License: [MIT](LICENSE).
+
+## Disclaimer
+
+PixelPixoo is an independent project and is not affiliated with Divoom, Sensibo, Google, or Formula 1. Use third-party APIs according to their terms and rate limits.

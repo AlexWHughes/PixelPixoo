@@ -4,10 +4,21 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .DS_Store
-config.yaml
-.env
-preview/
-*.png
 .idea/
 .vscode/
+
+# Local secrets & runtime config (never commit)
+.env
+.env.*
+!.env.example
+config.yaml
+*.pem
+*.key
+credentials.json
+
+# Generated frames / local mounts
+preview/
+*.png
+!docs/**/*.png

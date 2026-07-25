@@ -36,7 +36,7 @@ _TRAFFIC_TTL_DAY_SEC = 15 * 60
 _TRAFFIC_TTL_NIGHT_SEC = 30 * 60
 _TRAFFIC_DAY_START_HOUR = 6   # 06:00 inclusive
 _TRAFFIC_DAY_END_HOUR = 20    # 20:00 exclusive
-_DEFAULT_TZ = "Australia/Melbourne"
+_DEFAULT_TZ = "Australia/Sydney"
 
 
 @dataclass
