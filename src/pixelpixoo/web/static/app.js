@@ -53,15 +53,57 @@ function bindRange(name, labelId) {
   sync();
 }
 
-function addFromTemplate(tplId, listId, values = {}) {
-  const node = $(tplId).content.firstElementChild.cloneNode(true);
-  for (const [key, val] of Object.entries(values)) {
-    const input = node.querySelector(`[data-f="${key}"]`);
-    if (input) input.value = val ?? "";
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** ISO / any Date-parseable → datetime-local value (browser local TZ). */
+function toDatetimeLocal(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    // Already datetime-local shaped?
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso)) return iso.slice(0, 16);
+    return "";
   }
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  );
+}
+
+/** datetime-local → ISO-8601 with local offset. */
+function fromDatetimeLocal(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const oh = pad2(Math.floor(abs / 60));
+  const om = pad2(abs % 60);
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:00${sign}${oh}:${om}`
+  );
+}
+
+function addCountdownRow(values = {}) {
+  const node = $("#tplCountdown").content.firstElementChild.cloneNode(true);
+  node.querySelector('[data-f="label"]').value = values.label || "";
+  node.querySelector('[data-f="at"]').value = toDatetimeLocal(values.at || "");
   node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
-  $(listId).appendChild(node);
+  $("#countdownList").appendChild(node);
   return node;
+}
+
+function readCountdowns() {
+  return $$("#countdownList .countdown-row")
+    .map((row) => ({
+      label: row.querySelector('[data-f="label"]')?.value.trim() || "",
+      at: fromDatetimeLocal(row.querySelector('[data-f="at"]')?.value || ""),
+    }))
+    .filter((item) => item.label && item.at);
 }
 
 function readRows(listId, fields) {
@@ -280,7 +322,7 @@ function fillConfig(cfg) {
 
   $("#countdownList").innerHTML = "";
   for (const item of cfg.countdown || []) {
-    addFromTemplate("#tplCountdown", "#countdownList", item);
+    addCountdownRow(item);
   }
 
   bindRange("brightness", "#brightnessVal");
@@ -352,7 +394,7 @@ function collectPayload() {
     },
     sensibo_api_key: form.sensibo_api_key.value,
     clear_sensibo_api_key: form.clear_sensibo_api_key.checked,
-    countdown: readRows("#countdownList", ["label", "at"]),
+    countdown: readCountdowns(),
     schedule: {
       enabled: form.schedule_enabled.checked,
       timezone: form.schedule_timezone.value.trim() || "Australia/Sydney",
@@ -656,9 +698,12 @@ function wireUi() {
   $("#btnAddSensibo").addEventListener("click", () =>
     addFromTemplate("#tplSensibo", "#sensiboList", { label: "", room: "", pod_id: "" })
   );
-  $("#btnAddCountdown").addEventListener("click", () =>
-    addFromTemplate("#tplCountdown", "#countdownList", { label: "", at: "" })
-  );
+  $("#btnAddCountdown").addEventListener("click", () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    addCountdownRow({ label: "", at: tomorrow.toISOString() });
+  });
   $("#btnAddView").addEventListener("click", () =>
     addViewRow({
       name: "HOME",

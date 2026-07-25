@@ -25,6 +25,9 @@ F1_SESSION_IDS = (
     "race",
 )
 
+# Stored label length; Pixoo paint clips by pixel width
+LABEL_MAX = 16
+
 
 @dataclass
 class WeatherConfig:
@@ -225,7 +228,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             weather = WeatherConfig(
                 latitude=float(_require(weather_raw, "latitude")),
                 longitude=float(_require(weather_raw, "longitude")),
-                label=str(weather_raw.get("label", "HOME"))[:8],
+                label=str(weather_raw.get("label", "HOME"))[:LABEL_MAX],
                 timezone=str(weather_raw.get("timezone", "UTC")),
                 forecast_days=forecast_days,
                 show_current=bool(weather_raw.get("show_current", True)),
@@ -260,7 +263,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     for item in raw.get("countdown") or []:
         if isinstance(item, dict) and "label" in item and "at" in item:
             countdown.append(
-                CountdownTarget(label=str(item["label"])[:8], at=str(item["at"]))
+                CountdownTarget(label=str(item["label"])[:LABEL_MAX], at=str(item["at"]))
             )
 
     sensibo: SensiboConfig | None = None
@@ -279,7 +282,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                         continue
                     devices.append(
                         SensiboDevice(
-                            label=str(item.get("label", "") or item.get("name", ""))[:8],
+                            label=str(item.get("label", "") or item.get("name", ""))[
+                                :LABEL_MAX
+                            ],
                             pod_id=str(item.get("pod_id", "")),
                             room=str(item.get("room", "")),
                         )

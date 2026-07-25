@@ -31,15 +31,15 @@ logger = logging.getLogger(__name__)
 
 JOLPICA_NEXT = "https://api.jolpi.ca/ergast/f1/current/next.json"
 
-# Jolpica field name → session id
+# Jolpica field name → session id → short label
 _SESSION_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("FirstPractice", "fp1", "FP1"),
     ("SecondPractice", "fp2", "FP2"),
     ("ThirdPractice", "fp3", "FP3"),
     ("SprintQualifying", "sq", "SQ"),
-    ("Sprint", "sprint", "SPR"),
+    ("Sprint", "sprint", "S"),
     ("Qualifying", "quali", "Q"),
-    ("Race", "race", "RACE"),
+    ("Race", "race", "R"),
 )
 
 
@@ -64,12 +64,35 @@ def _shorten(name: str, max_len: int = 10) -> str:
         name.upper()
         .replace("GRAND PRIX", "GP")
         .replace("FORMULA 1", "")
+        .replace("FORMULA1", "")
         .replace("  ", " ")
         .strip()
     )
     if len(cleaned) <= max_len:
         return cleaned
     return cleaned[:max_len]
+
+
+def race_title(name: str, max_len: int = 12) -> str:
+    """Format as '<NAME> GP' — never 'F1 …'."""
+    raw = (
+        name.upper()
+        .replace("FORMULA 1", "")
+        .replace("FORMULA1", "")
+        .strip()
+    )
+    raw = " ".join(raw.split())
+    base = raw.replace("GRAND PRIX", " ").replace(" GP", " ").replace("GP", " ")
+    base = " ".join(base.split()).strip()
+    if not base:
+        title = "GP"
+    else:
+        title = f"{base} GP"
+    if len(title) <= max_len:
+        return title
+    # Keep the GP suffix; truncate the place name
+    budget = max(2, max_len - 3)  # room for " GP"
+    return f"{base[:budget].rstrip()} GP"
 
 
 def _parse_session_dt(block: dict) -> datetime | None:
@@ -139,6 +162,20 @@ def _countdown(start: datetime) -> str:
     return f"{minutes}M"
 
 
+def _when_short(start: datetime) -> str:
+    """Compact local date/time that stays readable on a 64px tile."""
+    local = start.astimezone()
+    return local.strftime("%d %b").upper() + local.strftime(" %H:%M")
+
+
+def _when_date(start: datetime) -> str:
+    return start.astimezone().strftime("%d %b").upper()
+
+
+def _when_time(start: datetime) -> str:
+    return start.astimezone().strftime("%H:%M")
+
+
 def filter_sessions(race: NextRace, cfg: F1Config) -> list[SessionEvent]:
     allowed = {s for s in cfg.sessions if s in F1_SESSION_IDS}
     now = datetime.now(timezone.utc)
@@ -202,18 +239,13 @@ class F1Screen:
         t = self.theme
         cfg = self.cfg
         img = new_canvas(BLACK)
+        header = race_title(race.race_name, 12 if t.use_tiny_font else 10)
         draw_label_bar(
-            img, "F1", RED, height=t.header_h, tiny=t.use_tiny_font
+            img, header, RED, height=t.header_h, tiny=t.use_tiny_font
         )
         y = t.header_h + 2
         sessions = filter_sessions(race, cfg)
 
-        if cfg.show_race_name:
-            title = _shorten(race.race_name, 12 if t.use_tiny_font else 10)
-            draw_centered(
-                img, title, y, WHITE, tiny=t.use_tiny_font, spacing=t.spacing
-            )
-            y += t.body_h + t.line_gap
         if cfg.show_country:
             country = _shorten(race.country, 12 if t.use_tiny_font else 10)
             draw_centered(
@@ -231,21 +263,31 @@ class F1Screen:
             line_h = t.body_h + t.line_gap
             max_rows = max(1, (62 - y) // max(1, line_h))
             for sess in sessions[:max_rows]:
-                parts: list[str] = [sess.label]
+                left = sess.label
                 if cfg.show_countdown:
-                    parts.append(_countdown(sess.start))
-                if cfg.show_datetime:
-                    parts.append(sess.start.astimezone().strftime("%m/%d %H%M"))
-                row = " ".join(parts)
+                    left = f"{sess.label} {_countdown(sess.start)}"
                 draw_text(
                     img,
-                    row,
+                    left,
                     2,
                     y,
                     CYAN if sess.session_id != "race" else RED,
                     spacing=t.spacing,
                     tiny=t.use_tiny_font,
                 )
+                if cfg.show_datetime:
+                    when = _when_time(sess.start)
+                    wx = 62 - text_width(when, tiny=t.use_tiny_font, spacing=t.spacing)
+                    if wx > text_width(left, tiny=t.use_tiny_font, spacing=t.spacing) + 4:
+                        draw_text(
+                            img,
+                            when,
+                            max(2, wx),
+                            y,
+                            WHITE,
+                            spacing=t.spacing,
+                            tiny=t.use_tiny_font,
+                        )
                 y += line_h
             return img
 
@@ -270,9 +312,9 @@ class F1Screen:
             y += (7 * scale if not t.use_tiny_font else 5) + t.line_gap
 
         if cfg.show_datetime:
-            when = sess.start.astimezone().strftime("%m/%d %H:%M")
+            when = _when_short(sess.start)
             if text_width(when, tiny=t.use_tiny_font, spacing=t.spacing) > 60:
-                when = sess.start.astimezone().strftime("%m/%d %H%M")
+                when = f"{_when_date(sess.start)} {_when_time(sess.start)}"
             if y + t.body_h <= 62:
                 draw_centered(
                     img, when, y, WHITE, tiny=t.use_tiny_font, spacing=t.spacing

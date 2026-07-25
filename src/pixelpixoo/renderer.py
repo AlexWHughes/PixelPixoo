@@ -200,7 +200,12 @@ def draw_label_bar(
     draw = ImageDraw.Draw(img)
     draw.rectangle([0, 0, SIZE - 1, max(6, height) - 1], fill=(20, 20, 28))
     y = 1 if height <= 8 else 2
-    draw_text(img, label[:12], 2, y, color, tiny=tiny, spacing=0 if tiny else 1)
+    spacing = 0 if tiny else 1
+    text = label.upper().strip()
+    while text and text_width(text, tiny=tiny, spacing=spacing) > SIZE - 4:
+        text = text[:-1]
+    if text:
+        draw_text(img, text, 2, y, color, tiny=tiny, spacing=spacing)
 
 
 def fill_rect(

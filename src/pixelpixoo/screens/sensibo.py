@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import httpx
 from PIL import Image
 
-from pixelpixoo.config import SensiboConfig
+from pixelpixoo.config import LABEL_MAX, SensiboConfig
 from pixelpixoo.renderer import (
     BLACK,
     BLUE,
@@ -139,7 +139,7 @@ def resolve_devices(cfg: SensiboConfig, client: httpx.Client) -> list[tuple[str,
             logger.warning("Sensibo device not found: %s", device)
             continue
         label = device.label or _short_room(snap.room)
-        resolved.append((label[:8], snap.pod_id))
+        resolved.append((label[:LABEL_MAX], snap.pod_id))
     return resolved
 
 
