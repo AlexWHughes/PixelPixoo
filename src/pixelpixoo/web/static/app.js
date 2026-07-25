@@ -564,14 +564,14 @@ async function saveConfig(event) {
 async function exportConfig() {
   try {
     const payload = collectPayload();
-    // Export the live form (tiles, text scale, layout, bins, …), not only disk.
     delete payload.clear_google_maps_api_key;
     delete payload.clear_sensibo_api_key;
-    const res = await fetch("/api/config/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+
+    // Persist live UI first so the backup matches tiles, views, text scale, etc.
+    await api("/api/config", { method: "PUT", body: JSON.stringify(payload) });
+
+    // Dump the saved full config (config + yaml snapshot + secrets)
+    const res = await fetch("/api/config/export");
     if (!res.ok) {
       const text = await res.text();
       let detail = text || res.statusText;
@@ -593,7 +593,11 @@ async function exportConfig() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast("Exported full UI config (includes API keys)", true);
+
+    const cfg = await api("/api/config");
+    fillConfig(cfg);
+    await refreshStatus();
+    showToast("Backup downloaded (full config + views)", true);
   } catch (err) {
     showToast(err.message || String(err), false);
   }
@@ -608,7 +612,7 @@ async function onImportFileSelected(event) {
   event.target.value = "";
   if (!file) return;
   const ok = window.confirm(
-    `Import “${file.name}”? This replaces the current config — tiles, text scale, layout, screens, and any API keys in the file.`
+    `Restore “${file.name}”? This replaces the full config — display tiles, views, screens, and API keys in the file.`
   );
   if (!ok) return;
   try {
@@ -619,15 +623,18 @@ async function onImportFileSelected(event) {
     } catch {
       throw new Error("File is not valid JSON");
     }
+    if (!body || typeof body !== "object") {
+      throw new Error("Backup file is empty or invalid");
+    }
+    // Accept either full bundle {format,config,yaml} or a bare config object
     await api("/api/config/import", {
       method: "POST",
       body: JSON.stringify(body),
     });
-    // Re-fetch public config so tile_options / hints match the imported layout
     const cfg = await api("/api/config");
     fillConfig(cfg);
     await refreshStatus();
-    showToast("Imported full config. Push loop reloading…", true);
+    showToast("Restored full config. Push loop reloading…", true);
   } catch (err) {
     showToast(err.message || String(err), false);
   }
@@ -810,10 +817,11 @@ function readViews() {
       layout: row.querySelector('[data-f="layout"]')?.value || "list",
       text_scale: row.querySelector('[data-f="text_scale"]')?.value || "compact",
       show_header: true,
+      show_borders: form.show_borders?.checked !== false,
       tiles,
       row_pattern: parsePattern(row.querySelector('[data-f="row_pattern"]')?.value || ""),
     };
-  });
+  }).filter((v) => v.name);
 }
 
 function wireUi() {

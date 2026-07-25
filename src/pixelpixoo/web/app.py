@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -58,14 +58,16 @@ def get_config() -> dict[str, Any]:
 
 @app.get("/api/config/export")
 def export_config_get() -> Response:
-    """Download full saved config JSON (includes API keys)."""
+    """Download full saved config JSON (includes API keys, display, views)."""
     return _export_response(None)
 
 
 @app.post("/api/config/export")
-def export_config_post(payload: dict[str, Any] | None = None) -> Response:
-    """Download full config from the live web UI form payload."""
-    return _export_response(payload)
+def export_config_post(
+    payload: dict[str, Any] = Body(default_factory=dict),
+) -> Response:
+    """Download a bundle from a live UI form payload (no disk write)."""
+    return _export_response(payload or None)
 
 
 def _export_response(form_payload: dict[str, Any] | None) -> Response:

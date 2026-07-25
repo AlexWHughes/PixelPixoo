@@ -27,7 +27,7 @@ _WEEKDAY_YAML = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 SECRET_KEYS = ("PIXOO_IP", "GOOGLE_MAPS_API_KEY", "SENSIBO_API_KEY", "PIXELPIXOO_PREVIEW")
 EXPORT_FORMAT = "pixelpixoo-config"
-EXPORT_VERSION = 2
+EXPORT_VERSION = 3
 _IMPORT_DROP_KEYS = frozenset(
     {
         "tile_options",
@@ -38,6 +38,10 @@ _IMPORT_DROP_KEYS = frozenset(
         "session_options",
         "clear_google_maps_api_key",
         "clear_sensibo_api_key",
+        "yaml",
+        "format",
+        "version",
+        "exported_at",
     }
 )
 
@@ -266,30 +270,35 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
 
 
 def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Full portable backup (UI fields + raw secrets).
+    """Full portable backup of the **saved** config (UI shape + raw secrets).
 
-    When ``form_payload`` is provided (web Export), that live form state is the
-    source of truth — including display tiles, text scale, layout, bins, etc.
-    Empty/masked secret fields fall back to the server's stored secrets.
+    Prefer saving the live form via PUT ``/api/config`` first, then calling this
+    (GET ``/api/config/export``). Optional ``form_payload`` still builds a bundle
+    without writing disk — used as a fallback.
     """
     env = read_env_file()
     google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
     sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
 
-    if form_payload and isinstance(form_payload, dict):
+    if form_payload and isinstance(form_payload, dict) and form_payload.get("pixoo_ip"):
         config = _export_config_from_form(form_payload, google=google, sensibo=sensibo)
+        yaml_snapshot = None
     else:
         config = _export_config_from_saved(google=google, sensibo=sensibo)
+        yaml_snapshot = raw_yaml()
 
     if not str(config.get("pixoo_ip", "")).strip():
         raise ValueError("pixoo_ip is required for export")
 
-    return {
+    bundle: dict[str, Any] = {
         "format": EXPORT_FORMAT,
         "version": EXPORT_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "config": config,
     }
+    if yaml_snapshot is not None:
+        bundle["yaml"] = yaml_snapshot
+    return bundle
 
 
 def _usable_secret(value: Any, fallback: str) -> str:
@@ -378,11 +387,20 @@ def _export_config_from_form(
         if isinstance(config.get("traffic"), dict)
         else {}
     )
-    config["sensibo"] = (
+    sensibo_block = (
         dict(config.get("sensibo") or {})
         if isinstance(config.get("sensibo"), dict)
         else {}
     )
+    # Explicit device pins must survive backup/restore
+    devices = [
+        d
+        for d in (sensibo_block.get("devices") or [])
+        if isinstance(d, dict) and (d.get("pod_id") or d.get("room") or d.get("label"))
+    ]
+    sensibo_block["devices"] = devices
+    sensibo_block["auto_discover"] = not bool(devices)
+    config["sensibo"] = sensibo_block
     config["google_maps_api_key"] = _usable_secret(
         config.get("google_maps_api_key"), google
     )
@@ -397,25 +415,69 @@ def _export_config_from_form(
 
 
 def _export_config_from_saved(*, google: str, sensibo: str) -> dict[str, Any]:
+    """Build export payload from on-disk YAML + live secrets (source of truth)."""
     pub = public_config_dict()
+    raw = raw_yaml()
     f1 = dict(pub.get("f1") or {})
     f1.pop("session_options", None)
+
+    # Prefer raw YAML for layout/views so nothing is lost through UI shaping
+    display = _normalize_display_export(raw.get("display") or pub.get("display"))
+    views = _normalize_views_export(raw.get("views") if "views" in raw else pub.get("views"))
+
+    weather = dict(pub.get("weather") or {})
+    if isinstance(raw.get("weather"), dict):
+        # Keep enabled flag + coords from disk when present
+        weather = {**weather, **{k: v for k, v in raw["weather"].items() if k != "api_key"}}
+
+    traffic = dict(pub.get("traffic") or {})
+    if isinstance(raw.get("traffic"), dict):
+        traffic["enabled"] = raw["traffic"].get("enabled", traffic.get("enabled", True))
+        if raw["traffic"].get("routes") is not None:
+            traffic["routes"] = raw["traffic"]["routes"]
+
+    sensibo_block = dict(pub.get("sensibo") or {})
+    if isinstance(raw.get("sensibo"), dict):
+        sensibo_block = {
+            **sensibo_block,
+            **{k: v for k, v in raw["sensibo"].items() if k != "api_key"},
+        }
+    devices = [
+        d
+        for d in (sensibo_block.get("devices") or [])
+        if isinstance(d, dict)
+    ]
+    sensibo_block["devices"] = devices
+    sensibo_block["auto_discover"] = not bool(devices)
+
+    bins = dict(pub.get("bins") or {})
+    if isinstance(raw.get("bins"), dict):
+        bins = {**bins, **raw["bins"]}
+
+    schedule = dict(pub.get("schedule") or {})
+    if isinstance(raw.get("schedule"), dict):
+        schedule = {**schedule, **raw["schedule"]}
+
+    countdown = pub.get("countdown") or []
+    if isinstance(raw.get("countdown"), list):
+        countdown = raw["countdown"]
+
     return {
-        "pixoo_ip": pub.get("pixoo_ip", ""),
-        "rotate_seconds": pub.get("rotate_seconds", 18),
-        "brightness": pub.get("brightness", 80),
+        "pixoo_ip": str(raw.get("pixoo_ip") or pub.get("pixoo_ip") or "").strip(),
+        "rotate_seconds": raw.get("rotate_seconds", pub.get("rotate_seconds", 18)),
+        "brightness": raw.get("brightness", pub.get("brightness", 80)),
         "preview_mode": bool(pub.get("preview_mode")),
         "preview_dir": pub.get("preview_dir") or "/preview",
-        "enable_f1": bool(pub.get("enable_f1", True)),
-        "f1": f1,
-        "weather": pub.get("weather") or {},
-        "traffic": pub.get("traffic") or {},
-        "sensibo": pub.get("sensibo") or {},
-        "countdown": pub.get("countdown") or [],
-        "bins": pub.get("bins") or {},
-        "display": _normalize_display_export(pub.get("display")),
-        "views": _normalize_views_export(pub.get("views")),
-        "schedule": pub.get("schedule") or {},
+        "enable_f1": bool(raw.get("enable_f1", pub.get("enable_f1", True))),
+        "f1": f1 if not isinstance(raw.get("f1"), dict) else {**f1, **raw["f1"]},
+        "weather": weather,
+        "traffic": traffic,
+        "sensibo": sensibo_block,
+        "countdown": countdown,
+        "bins": bins,
+        "display": display,
+        "views": views,
+        "schedule": schedule,
         "google_maps_api_key": google,
         "sensibo_api_key": sensibo,
     }
@@ -429,8 +491,21 @@ def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
     if body.get("format") == EXPORT_FORMAT:
         config = body.get("config")
         if not isinstance(config, dict):
-            raise ValueError("Bundle missing config object")
-        payload = dict(config)
+            # Fall back to yaml snapshot + secrets if present
+            if isinstance(body.get("yaml"), dict):
+                config = _payload_from_yaml_snapshot(
+                    body["yaml"],
+                    google=str(body.get("google_maps_api_key") or ""),
+                    sensibo=str(body.get("sensibo_api_key") or ""),
+                )
+            else:
+                raise ValueError("Bundle missing config object")
+        else:
+            config = dict(config)
+            # Fill gaps from yaml snapshot when config is partial
+            if isinstance(body.get("yaml"), dict):
+                config = _merge_yaml_into_config(config, body["yaml"])
+        payload = config
     elif "config" in body and isinstance(body.get("config"), dict) and "pixoo_ip" not in body:
         payload = dict(body["config"])
     else:
@@ -446,8 +521,20 @@ def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
         payload["f1"] = f1
 
     payload["display"] = _normalize_display_export(payload.get("display"))
-    if "views" in payload:
-        payload["views"] = _normalize_views_export(payload.get("views"))
+    payload["views"] = _normalize_views_export(payload.get("views"))
+
+    sensibo_block = payload.get("sensibo")
+    if isinstance(sensibo_block, dict):
+        sensibo_block = dict(sensibo_block)
+        devices = [
+            d
+            for d in (sensibo_block.get("devices") or [])
+            if isinstance(d, dict) and (d.get("pod_id") or d.get("room") or d.get("label"))
+        ]
+        sensibo_block["devices"] = devices
+        # Never wipe pinned devices during restore
+        sensibo_block["auto_discover"] = not bool(devices)
+        payload["sensibo"] = sensibo_block
 
     # Full replace for secrets when keys are present (empty ⇒ clear)
     if "google_maps_api_key" in payload:
@@ -464,6 +551,56 @@ def normalize_import_payload(body: dict[str, Any]) -> dict[str, Any]:
     if not str(payload.get("pixoo_ip", "")).strip():
         raise ValueError("Import config requires pixoo_ip")
     return payload
+
+
+def _merge_yaml_into_config(config: dict[str, Any], yaml_data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure display/views/screens from yaml fill any holes in config."""
+    merged = dict(config)
+    if not merged.get("display") and yaml_data.get("display"):
+        merged["display"] = yaml_data["display"]
+    if not merged.get("views") and yaml_data.get("views") is not None:
+        merged["views"] = yaml_data["views"]
+    for key in (
+        "weather",
+        "traffic",
+        "sensibo",
+        "countdown",
+        "bins",
+        "schedule",
+        "f1",
+        "enable_f1",
+        "rotate_seconds",
+        "brightness",
+        "pixoo_ip",
+    ):
+        if key not in merged or merged[key] in (None, {}, []):
+            if key in yaml_data:
+                merged[key] = yaml_data[key]
+    return merged
+
+
+def _payload_from_yaml_snapshot(
+    yaml_data: dict[str, Any], *, google: str, sensibo: str
+) -> dict[str, Any]:
+    return {
+        "pixoo_ip": str(yaml_data.get("pixoo_ip") or "").strip(),
+        "rotate_seconds": yaml_data.get("rotate_seconds", 18),
+        "brightness": yaml_data.get("brightness", 80),
+        "preview_mode": False,
+        "preview_dir": "/preview",
+        "enable_f1": bool(yaml_data.get("enable_f1", True)),
+        "f1": yaml_data.get("f1") or {},
+        "weather": yaml_data.get("weather") or {},
+        "traffic": yaml_data.get("traffic") or {},
+        "sensibo": yaml_data.get("sensibo") or {},
+        "countdown": yaml_data.get("countdown") or [],
+        "bins": yaml_data.get("bins") or {},
+        "display": yaml_data.get("display") or {},
+        "views": yaml_data.get("views") or [],
+        "schedule": yaml_data.get("schedule") or {},
+        "google_maps_api_key": google,
+        "sensibo_api_key": sensibo,
+    }
 
 
 def _bins_public(loaded: AppConfig, raw: dict[str, Any]) -> dict[str, Any]:
@@ -631,8 +768,10 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
                 "room": str(d.get("room", "")),
             }
         )
-    # auto_discover => empty devices list
-    if sensibo.get("auto_discover", len(devices) == 0):
+    # auto_discover with no pins ⇒ empty list; explicit devices always kept
+    if devices:
+        pass
+    elif sensibo.get("auto_discover", True):
         devices = []
     yaml_data["sensibo"] = {
         "enabled": bool(sensibo.get("enabled", True)),
