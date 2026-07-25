@@ -25,12 +25,18 @@ from pixelpixoo.renderer import (
     text_width,
 )
 from pixelpixoo.screens.countdown import _format_remaining, _parse_target
-from pixelpixoo.screens.f1 import _countdown
+from pixelpixoo.screens.f1 import (
+    _countdown,
+    _when_date,
+    _when_short,
+    _when_time,
+    filter_sessions,
+    race_title,
+)
 from pixelpixoo.screens.f1 import _fetch as _fetch_f1
-from pixelpixoo.screens.f1 import _shorten, filter_sessions
 from pixelpixoo.screens.sensibo import fetch_snapshot, resolve_devices
 from pixelpixoo.screens.traffic import _eta_color, _fetch_route
-from pixelpixoo.screens.weather import _code_short, _weekday
+from pixelpixoo.screens.weather import _code_short, _day_label, _weekday
 from pixelpixoo.screens.weather import _fetch as _fetch_weather
 from pixelpixoo.theme import Theme
 
@@ -174,41 +180,75 @@ def _paint_f1(
     race = _fetch_f1(http)
     f1 = cfg.f1
     sessions = filter_sessions(race, f1)
-    title = _shorten(race.race_name, 8 if rect[2] < 40 else 10)
+    max_title = 12 if rect[2] >= 48 else (10 if rect[2] >= 36 else 8)
+    title = race_title(race.race_name, max_title)
     row = 0
     if f1.show_race_name:
-        _line(img, rect, theme, f"F1 {title}", RED, row)
+        _line(img, rect, theme, title, RED, row)
         row += 1
     if not sessions:
         _line(img, rect, theme, "NO SESS", ORANGE, row)
         return
+
+    line_h = theme.body_h + theme.line_gap
+    rows_left = max(0, (rect[3] - 2) // max(1, line_h) - row)
+
     if f1.mode == "list":
-        line_h = theme.body_h + theme.line_gap
-        max_rows = max(1, (rect[3] - 2) // max(1, line_h) - row)
-        for sess in sessions[:max_rows]:
-            parts = [sess.label]
+        for sess in sessions[: max(1, rows_left)]:
+            # Session + countdown on one line; never glue the date onto it
             if f1.show_countdown:
-                parts.append(_countdown(sess.start))
-            if f1.show_datetime:
-                parts.append(sess.start.astimezone().strftime("%d/%H%M"))
-            _line(img, rect, theme, " ".join(parts), WHITE, row)
+                _line(
+                    img,
+                    rect,
+                    theme,
+                    f"{sess.label} {_countdown(sess.start)}",
+                    WHITE,
+                    row,
+                )
+            else:
+                _line(img, rect, theme, sess.label, WHITE, row)
             row += 1
+            rows_left -= 1
+            if f1.show_datetime and rows_left > 0:
+                _line(img, rect, theme, _when_short(sess.start), YELLOW, row)
+                row += 1
+                rows_left -= 1
+                # Only show date for the first session when cramped
+                if rows_left <= 1:
+                    break
         return
+
     sess = sessions[0]
-    _line(img, rect, theme, sess.label, CYAN, row)
-    row += 1
-    if f1.show_countdown:
-        _line(img, rect, theme, _countdown(sess.start), WHITE, row, hero=rect[3] >= 24)
+    # Separate lines: session → countdown → date/time (avoids "Q 3H 2M 25/1400")
+    if rows_left >= 3 or not f1.show_datetime:
+        _line(img, rect, theme, sess.label, CYAN, row)
         row += 1
+        if f1.show_countdown:
+            _line(
+                img,
+                rect,
+                theme,
+                _countdown(sess.start),
+                WHITE,
+                row,
+                hero=rect[3] >= 28 and rows_left >= 3,
+            )
+            row += 1
+        if f1.show_datetime:
+            _line(img, rect, theme, _when_short(sess.start), YELLOW, row)
+        return
+
+    # Tight band: "Q 3H 2M" then "25 JUL 14:00"
+    head = sess.label
+    if f1.show_countdown:
+        head = f"{sess.label} {_countdown(sess.start)}"
+    _line(img, rect, theme, head, CYAN, row)
+    row += 1
     if f1.show_datetime:
-        _line(
-            img,
-            rect,
-            theme,
-            sess.start.astimezone().strftime("%m/%d %H:%M"),
-            YELLOW,
-            row,
-        )
+        when = _when_short(sess.start)
+        if text_width(when, tiny=theme.use_tiny_font, spacing=theme.spacing) > rect[2] - 2:
+            when = f"{_when_date(sess.start)} {_when_time(sess.start)}"
+        _line(img, rect, theme, when, YELLOW, row)
 
 
 def _paint_sensibo(
@@ -258,7 +298,7 @@ def _paint_sensibo(
     if detail and rect[3] >= 20:
         _line(img, rect, theme, " ".join(detail), WHITE, row)
         row += 1
-    if show.show_room and rect[3] >= 24:
+    if show.show_room and rect[3] >= 24 and rect[2] >= 40:
         _line(img, rect, theme, snap.room.upper()[:10], WHITE, row)
 
 

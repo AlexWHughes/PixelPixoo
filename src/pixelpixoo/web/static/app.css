@@ -474,7 +474,12 @@ input[type="range"] {
   background: rgba(11, 13, 16, 0.55);
 }
 
-.countdown-row { grid-template-columns: 90px 1fr auto; }
+.countdown-row { grid-template-columns: minmax(120px, 0.8fr) minmax(220px, 1.4fr) auto; }
+
+input[type="datetime-local"] {
+  color-scheme: dark;
+  min-height: 2.4rem;
+}
 .chip-row {
   display: flex;
   flex-wrap: wrap;

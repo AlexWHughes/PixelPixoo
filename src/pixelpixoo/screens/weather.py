@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -122,6 +122,16 @@ def _code_short(code: int) -> str:
 
 def _weekday(d: date) -> str:
     return d.strftime("%a").upper()[:2]
+
+
+def _day_label(d: date, *, today: date | None = None) -> str:
+    """Top-line date, e.g. TODAY / SAT 26."""
+    ref = today or date.today()
+    if d == ref:
+        return "TODAY"
+    if d == ref + timedelta(days=1):
+        return "TMRO"
+    return f"{d.strftime('%a').upper()[:3]} {d.day}"
 
 
 def _draw_icon(img: Image.Image, code: int, ox: int, oy: int) -> None:

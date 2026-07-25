@@ -13,6 +13,7 @@ import yaml
 from pixelpixoo.config import (
     AppConfig,
     F1_SESSION_IDS,
+    LABEL_MAX,
     load_config,
 )
 from pixelpixoo.schedule import schedule_public_dict
@@ -156,7 +157,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
     elif sensibo_raw.get("devices"):
         sensibo_devices = [
             {
-                "label": str(d.get("label", ""))[:8],
+                "label": str(d.get("label", ""))[:LABEL_MAX],
                 "pod_id": str(d.get("pod_id", "")),
                 "room": str(d.get("room", "")),
             }
@@ -254,7 +255,7 @@ def _tile_options(
     if loaded.sensibo or sensibo_devices:
         options.append({"id": "sensibo", "label": "Sensibo (first)"})
         for d in sensibo_devices:
-            label = (d.get("label") or d.get("room") or "AC")[:8]
+            label = (d.get("label") or d.get("room") or "AC")[:LABEL_MAX]
             if label:
                 options.append({"id": f"sensibo:{label}", "label": f"Sensibo · {label}"})
     if loaded.traffic or traffic_routes:
@@ -310,7 +311,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
             "enabled": True,
             "latitude": float(weather.get("latitude", 0)),
             "longitude": float(weather.get("longitude", 0)),
-            "label": str(weather.get("label", "HOME"))[:8],
+            "label": str(weather.get("label", "HOME"))[:LABEL_MAX],
             "timezone": str(weather.get("timezone", "UTC")),
             "forecast_days": forecast_days,
             "show_current": bool(weather.get("show_current", True)),
@@ -359,7 +360,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
             continue
         devices.append(
             {
-                "label": str(d.get("label", ""))[:8],
+                "label": str(d.get("label", ""))[:LABEL_MAX],
                 "pod_id": str(d.get("pod_id", "")),
                 "room": str(d.get("room", "")),
             }
@@ -382,7 +383,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
     for item in payload.get("countdown") or []:
         if not isinstance(item, dict):
             continue
-        label = str(item.get("label", "")).strip()[:8]
+        label = str(item.get("label", "")).strip()[:LABEL_MAX]
         at = str(item.get("at", "")).strip()
         if label and at:
             countdown.append({"label": label, "at": at})

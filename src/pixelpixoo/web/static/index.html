@@ -214,8 +214,8 @@
           <p class="hint">Open-Meteo — no API key. Current conditions plus optional multi-day forecast.</p>
           <div class="fields four weather-fields">
             <label>
-              <span>Label <small>≤8 chars</small></span>
-              <input name="weather_label" maxlength="8" />
+              <span>Label <small>≤16 chars</small></span>
+              <input name="weather_label" maxlength="16" />
             </label>
             <label>
               <span>Latitude</span>
@@ -391,7 +391,7 @@
             <h2>Countdowns</h2>
             <button type="button" class="btn tiny" id="btnAddCountdown">Add date</button>
           </div>
-          <p class="hint">ISO-8601 timestamps with offset, e.g. <code>2026-12-20T00:00:00+10:00</code>. One slide each.</p>
+          <p class="hint">Pick a date and time — saved with your local timezone offset.</p>
           <div id="countdownList" class="stack"></div>
         </section>
 
@@ -414,7 +414,7 @@
 
   <template id="tplSensibo">
     <div class="card-row sensibo-row">
-      <label><span>Display name <small>on Pixoo</small></span><input data-f="label" maxlength="8" placeholder="LR" /></label>
+      <label><span>Display name <small>on Pixoo · ≤16</small></span><input data-f="label" maxlength="16" placeholder="Living" /></label>
       <label class="grow"><span>Room name <small>match Sensibo</small></span><input data-f="room" placeholder="Living Room" /></label>
       <label class="grow"><span>Pod ID</span><input data-f="pod_id" placeholder="optional" /></label>
       <button type="button" class="btn tiny danger" data-remove>Remove</button>
@@ -423,8 +423,11 @@
 
   <template id="tplCountdown">
     <div class="card-row countdown-row">
-      <label><span>Label</span><input data-f="label" maxlength="8" placeholder="HOL" /></label>
-      <label class="grow"><span>When (ISO-8601)</span><input data-f="at" placeholder="2026-12-20T00:00:00+10:00" /></label>
+      <label><span>Label <small>≤16</small></span><input data-f="label" maxlength="16" placeholder="Holiday" /></label>
+      <label class="grow">
+        <span>When</span>
+        <input data-f="at" type="datetime-local" step="60" />
+      </label>
       <button type="button" class="btn tiny danger" data-remove>Remove</button>
     </div>
   </template>

@@ -110,8 +110,10 @@ class CompositeScreen:
     ) -> None:
         top = theme.header_h if header else 0
         usable = 64 - top
-        shown = tiles[:4]
-        band = max(theme.body_h + theme.line_gap + 2, usable // max(1, len(shown)))
+        min_band = max(theme.body_h + theme.line_gap + 1, 8)
+        max_fit = max(1, usable // min_band)
+        shown = tiles[:max_fit]
+        band = max(min_band, usable // max(1, len(shown)))
         for i, tile in enumerate(shown):
             y = top + i * band
             h = band if i < len(shown) - 1 else 64 - y
