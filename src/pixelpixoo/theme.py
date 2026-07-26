@@ -143,19 +143,62 @@ def layout_rects(
     ]
 
 
+def pattern_pane_count(pattern: list[int]) -> int:
+    return sum(n for n in pattern if n in (1, 2))
+
+
+def fit_row_pattern(pattern: list[int], n_tiles: int) -> list[int]:
+    """Trim/adjust a row pattern so it yields exactly ``n_tiles`` panes.
+
+    Keeps earlier rows stable (so weather stays on top) and drops trailing
+    capacity when conditional tiles leave the layout — avoiding blank bands
+    that shrink every remaining tile.
+    """
+    if n_tiles <= 0:
+        return [1]
+    cleaned = [n for n in pattern if n in (1, 2)]
+    if not cleaned:
+        return [1] * n_tiles
+
+    while cleaned and pattern_pane_count(cleaned) > n_tiles:
+        excess = pattern_pane_count(cleaned) - n_tiles
+        if cleaned[-1] == 2 and excess == 1:
+            cleaned[-1] = 1
+            break
+        cleaned.pop()
+
+    while pattern_pane_count(cleaned) < n_tiles:
+        need = n_tiles - pattern_pane_count(cleaned)
+        cleaned.append(2 if need >= 2 else 1)
+
+    # Final safety if a trailing split overshoots by one.
+    while cleaned and pattern_pane_count(cleaned) > n_tiles:
+        if cleaned[-1] == 2:
+            cleaned[-1] = 1
+        else:
+            cleaned.pop()
+    return cleaned or [1]
+
+
 def row_pattern_rects(
     pattern: list[int],
     *,
     header: bool,
     header_h: int = 10,
+    tile_count: int | None = None,
 ) -> list[tuple[int, int, int, int]]:
     """Build panes from a custom row pattern of 1s and 2s.
 
     Example: [1, 1, 1, 2] → three full-width bands, then a split row.
     Example: [2, 2, 1, 2] → two splits, one full, one split.
+
+    When ``tile_count`` is set, the pattern is fitted so pane count matches
+    visible tiles (no blank reserved rows).
     """
     cleaned = [n for n in pattern if n in (1, 2)]
-    if not cleaned:
+    if tile_count is not None:
+        cleaned = fit_row_pattern(cleaned, tile_count)
+    elif not cleaned:
         cleaned = [1]
     top = header_h if header else 0
     usable = 64 - top

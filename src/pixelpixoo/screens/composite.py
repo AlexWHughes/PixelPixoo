@@ -83,7 +83,10 @@ class CompositeScreen:
         if layout == "rows":
             pattern = self.view.row_pattern or [1]
             rects = row_pattern_rects(
-                pattern, header=header, header_h=theme.header_h
+                pattern,
+                header=header,
+                header_h=theme.header_h,
+                tile_count=len(tiles),
             )
             self._paint_rects(img, tiles, rects, theme)
             return img
