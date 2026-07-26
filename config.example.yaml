@@ -54,7 +54,8 @@ countdown:
   - label: "HOLIDAY"
     at: "2026-12-20T00:00:00+11:00"
 
-# Kerbside bins — tile id `bins` (hidden when nothing is due within lead_days)
+# Kerbside bins — tile id `bins`. With both `bins` and `f1` in display.tiles they
+# share one slot (bins while due, otherwise F1) so the layout does not leave a blank row.
 bins:
   enabled: false
   timezone: "Australia/Sydney"

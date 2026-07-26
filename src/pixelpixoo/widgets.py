@@ -119,8 +119,36 @@ def tile_is_visible(tile: str, cfg: AppConfig) -> bool:
     return True
 
 
+def _tile_kind(tile: str) -> str:
+    return tile.partition(":")[0].strip().lower()
+
+
 def visible_tiles(cfg: AppConfig, tiles: list[str]) -> list[str]:
-    return [t for t in tiles if tile_is_visible(t, cfg)]
+    """Filter conditional tiles and collapse f1+bins into one alternating slot.
+
+    When both ``f1`` and ``bins`` appear in the tile list they share one pane:
+    bins win while due, otherwise F1. That avoids a blank reserved bins row and
+    keeps the remaining layout taller / more readable.
+    """
+    has_bins = any(_tile_kind(t) == "bins" for t in tiles)
+    has_f1 = any(_tile_kind(t) == "f1" for t in tiles)
+    if not (has_bins and has_f1):
+        return [t for t in tiles if tile_is_visible(t, cfg)]
+
+    use_bins = bins_are_due(cfg)
+    out: list[str] = []
+    slot_placed = False
+    for tile in tiles:
+        kind = _tile_kind(tile)
+        if kind in ("bins", "f1"):
+            if slot_placed:
+                continue
+            slot_placed = True
+            out.append("bins" if use_bins else "f1")
+            continue
+        if tile_is_visible(tile, cfg):
+            out.append(tile)
+    return out
 
 
 def bins_are_due(cfg: AppConfig) -> bool:
