@@ -41,6 +41,16 @@ def index() -> HTMLResponse:
     return HTMLResponse(index_path.read_text(encoding="utf-8"))
 
 
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    # 1×1 transparent PNG — avoids console 404 without shipping an asset
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+        "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+    )
+    return Response(content=png, media_type="image/png")
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "service": "pixelpixoo"}
