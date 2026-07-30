@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -32,6 +33,8 @@ from pixelpixoo.theme import Theme, theme_for
 logger = logging.getLogger(__name__)
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+# Prefer cache within this window; after that refresh, but keep serving stale on errors.
+_WEATHER_TTL_SEC = 10 * 60
 
 
 @dataclass
@@ -53,22 +56,17 @@ class WeatherData:
     forecast: list[DayForecast] = field(default_factory=list)
 
 
-def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
-    days = max(1, min(7, cfg.forecast_days))
-    params = {
-        "latitude": cfg.latitude,
-        "longitude": cfg.longitude,
-        "current": "temperature_2m,weather_code",
-        "daily": (
-            "temperature_2m_max,temperature_2m_min,weather_code,"
-            "precipitation_probability_max"
-        ),
-        "timezone": cfg.timezone,
-        "forecast_days": days,
-    }
-    response = client.get(OPEN_METEO_URL, params=params)
-    response.raise_for_status()
-    data = response.json()
+_weather_cache: dict[str, tuple[float, WeatherData]] = {}
+
+
+def _cache_key(cfg: WeatherConfig) -> str:
+    return (
+        f"{cfg.latitude:.4f}|{cfg.longitude:.4f}|"
+        f"{cfg.timezone}|{cfg.forecast_days}"
+    )
+
+
+def _parse_payload(data: dict) -> WeatherData:
     current = data["current"]
     daily = data["daily"]
     forecast: list[DayForecast] = []
@@ -99,6 +97,44 @@ def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
         rain_chance=today_rain,
         forecast=forecast,
     )
+
+
+def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
+    key = _cache_key(cfg)
+    now_mono = time.monotonic()
+    cached = _weather_cache.get(key)
+    if cached and now_mono - cached[0] < _WEATHER_TTL_SEC:
+        return cached[1]
+
+    days = max(1, min(7, cfg.forecast_days))
+    params = {
+        "latitude": cfg.latitude,
+        "longitude": cfg.longitude,
+        "current": "temperature_2m,weather_code",
+        "daily": (
+            "temperature_2m_max,temperature_2m_min,weather_code,"
+            "precipitation_probability_max"
+        ),
+        "timezone": cfg.timezone,
+        "forecast_days": days,
+    }
+    try:
+        response = client.get(OPEN_METEO_URL, params=params)
+        response.raise_for_status()
+        weather = _parse_payload(response.json())
+    except Exception as exc:
+        if cached is not None:
+            age = int(now_mono - cached[0])
+            logger.warning(
+                "Weather fetch failed (%s); using cached data (%ds old)",
+                exc,
+                age,
+            )
+            return cached[1]
+        raise
+
+    _weather_cache[key] = (time.monotonic(), weather)
+    return weather
 
 
 def _code_label(code: int) -> str:
