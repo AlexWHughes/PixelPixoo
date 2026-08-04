@@ -1,6 +1,7 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+const DEFAULT_TZ = "Australia/Sydney";
 const form = $("#configForm");
 const toast = $("#toast");
 let activePreview = null;
@@ -100,12 +101,10 @@ function addFromTemplate(tplId, listId, values = {}) {
 }
 
 function addCountdownRow(values = {}) {
-  const node = $("#tplCountdown").content.firstElementChild.cloneNode(true);
-  node.querySelector('[data-f="label"]').value = values.label || "";
-  node.querySelector('[data-f="at"]').value = toDatetimeLocal(values.at || "");
-  node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
-  $("#countdownList").appendChild(node);
-  return node;
+  return addFromTemplate("#tplCountdown", "#countdownList", {
+    label: values.label || "",
+    at: toDatetimeLocal(values.at || ""),
+  });
 }
 
 function readCountdowns() {
@@ -117,15 +116,23 @@ function readCountdowns() {
     .filter((item) => item.label && item.at);
 }
 
+function defaultBinColor(label) {
+  const key = String(label || "").toUpperCase().trim();
+  if (/LANDFILL|RUBBISH|GARBAGE|GENERAL|^RUB$/.test(key)) return "#dc3c3c";
+  if (/RECYCLE|RECYCLING|^REC$/.test(key)) return "#ffd23c";
+  if (/GREEN|GARDEN|^GRN$/.test(key)) return "#3cc864";
+  if (/FOGO|FOOD/.test(key)) return "#7dffb3";
+  return "#ff8c28";
+}
+
 function addBinRow(values = {}) {
-  const node = $("#tplBin").content.firstElementChild.cloneNode(true);
-  node.querySelector('[data-f="label"]').value = values.label || "";
-  node.querySelector('[data-f="weekday"]').value = (values.weekday || "wed").toLowerCase();
-  node.querySelector('[data-f="every_weeks"]').value = String(values.every_weeks || 1);
-  node.querySelector('[data-f="anchor"]').value = (values.anchor || "").slice(0, 10);
-  node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
-  $("#binsList").appendChild(node);
-  return node;
+  return addFromTemplate("#tplBin", "#binsList", {
+    label: values.label || "",
+    weekday: (values.weekday || "wed").toLowerCase(),
+    every_weeks: String(values.every_weeks || 1),
+    anchor: (values.anchor || "").slice(0, 10),
+    color: values.color || defaultBinColor(values.label),
+  });
 }
 
 function readBins() {
@@ -135,6 +142,7 @@ function readBins() {
       weekday: row.querySelector('[data-f="weekday"]')?.value || "wed",
       every_weeks: Number(row.querySelector('[data-f="every_weeks"]')?.value || 1),
       anchor: row.querySelector('[data-f="anchor"]')?.value || "",
+      color: row.querySelector('[data-f="color"]')?.value || "",
     }))
     .filter((item) => item.label && item.weekday);
 }
@@ -153,24 +161,25 @@ function labelForTile(id) {
   return tileOptions.find((o) => o.id === id)?.label || id;
 }
 
-function renderTilePicker() {
-  const box = $("#tilePicker");
+/** Shared checkbox-chip tile picker. Mutates `order` in place. */
+function mountTileChips(box, order, onChange) {
   box.innerHTML = "";
-  const selected = new Set(selectedTiles);
+  const set = new Set(order);
   for (const opt of tileOptions) {
     const lab = document.createElement("label");
     lab.className = "chip tile-chip";
     const input = document.createElement("input");
     input.type = "checkbox";
     input.value = opt.id;
-    input.checked = selected.has(opt.id);
+    input.checked = set.has(opt.id);
     input.addEventListener("change", () => {
       if (input.checked) {
-        if (!selectedTiles.includes(opt.id)) selectedTiles.push(opt.id);
+        if (!order.includes(opt.id)) order.push(opt.id);
       } else {
-        selectedTiles = selectedTiles.filter((t) => t !== opt.id);
+        const i = order.indexOf(opt.id);
+        if (i >= 0) order.splice(i, 1);
       }
-      renderTileOrder();
+      onChange(order);
     });
     lab.appendChild(input);
     const span = document.createElement("span");
@@ -178,6 +187,10 @@ function renderTilePicker() {
     lab.appendChild(span);
     box.appendChild(lab);
   }
+}
+
+function renderTilePicker() {
+  mountTileChips($("#tilePicker"), selectedTiles, () => renderTileOrder());
   renderTileOrder();
 }
 
@@ -231,6 +244,34 @@ function renderRowPattern() {
     viz.className = cols === 1 ? "row-viz full" : "row-viz split";
     viz.setAttribute("aria-hidden", "true");
     li.appendChild(viz);
+    const actions = document.createElement("span");
+    actions.className = "row-pattern-actions-inline";
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "btn tiny";
+    up.textContent = "↑";
+    up.title = "Move row up";
+    up.disabled = idx === 0;
+    up.addEventListener("click", () => {
+      [rowPattern[idx - 1], rowPattern[idx]] = [
+        rowPattern[idx],
+        rowPattern[idx - 1],
+      ];
+      renderRowPattern();
+    });
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "btn tiny";
+    down.textContent = "↓";
+    down.title = "Move row down";
+    down.disabled = idx === rowPattern.length - 1;
+    down.addEventListener("click", () => {
+      [rowPattern[idx], rowPattern[idx + 1]] = [
+        rowPattern[idx + 1],
+        rowPattern[idx],
+      ];
+      renderRowPattern();
+    });
     const rm = document.createElement("button");
     rm.type = "button";
     rm.className = "btn tiny danger";
@@ -239,7 +280,10 @@ function renderRowPattern() {
       rowPattern.splice(idx, 1);
       renderRowPattern();
     });
-    li.appendChild(rm);
+    actions.appendChild(up);
+    actions.appendChild(down);
+    actions.appendChild(rm);
+    li.appendChild(actions);
     list.appendChild(li);
   });
   if (!rowPattern.length) {
@@ -330,7 +374,7 @@ function fillConfig(cfg) {
   }
 
   form.schedule_enabled.checked = !!cfg.schedule?.enabled;
-  form.schedule_timezone.value = cfg.schedule?.timezone || "Australia/Sydney";
+  form.schedule_timezone.value = cfg.schedule?.timezone || DEFAULT_TZ;
   form.schedule_outside.value = cfg.schedule?.outside || "off";
   $("#scheduleList").innerHTML = "";
   for (const win of cfg.schedule?.windows || []) {
@@ -360,7 +404,7 @@ function fillConfig(cfg) {
   }
 
   form.bins_enabled.checked = !!cfg.bins?.enabled;
-  form.bins_timezone.value = cfg.bins?.timezone || "Australia/Sydney";
+  form.bins_timezone.value = cfg.bins?.timezone || DEFAULT_TZ;
   form.bins_lead_days.value = cfg.bins?.lead_days ?? 1;
   form.bins_eve_before.checked = cfg.bins?.eve_before !== false;
   $("#binsList").innerHTML = "";
@@ -443,14 +487,14 @@ function collectPayload() {
     countdown: readCountdowns(),
     bins: {
       enabled: form.bins_enabled.checked,
-      timezone: form.bins_timezone.value.trim() || "Australia/Sydney",
+      timezone: form.bins_timezone.value.trim() || DEFAULT_TZ,
       lead_days: Number(form.bins_lead_days.value),
       eve_before: form.bins_eve_before.checked,
       streams: readBins(),
     },
     schedule: {
       enabled: form.schedule_enabled.checked,
-      timezone: form.schedule_timezone.value.trim() || "Australia/Sydney",
+      timezone: form.schedule_timezone.value.trim() || DEFAULT_TZ,
       outside: form.schedule_outside.value,
       windows: readWindows(),
     },
@@ -723,13 +767,12 @@ function escapeHtml(value) {
 }
 
 function addWindowRow(values = {}) {
-  const node = $("#tplWindow").content.firstElementChild.cloneNode(true);
   const days = Array.isArray(values.days) ? values.days.join(",") : values.days || "all";
-  node.querySelector('[data-f="days"]').value = days;
-  node.querySelector('[data-f="start"]').value = values.start || "07:00";
-  node.querySelector('[data-f="end"]').value = values.end || "22:00";
-  node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
-  $("#scheduleList").appendChild(node);
+  return addFromTemplate("#tplWindow", "#scheduleList", {
+    days,
+    start: values.start || "07:00",
+    end: values.end || "22:00",
+  });
 }
 
 function readWindows() {
@@ -756,31 +799,10 @@ function parsePattern(raw) {
 function mountViewTilePicker(node, selected) {
   const box = node.querySelector('[data-role="view-tiles"]');
   if (!box) return;
-  box.innerHTML = "";
   const order = [...selected];
-  const set = new Set(order);
-  for (const opt of tileOptions) {
-    const lab = document.createElement("label");
-    lab.className = "chip tile-chip";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.value = opt.id;
-    input.checked = set.has(opt.id);
-    input.addEventListener("change", () => {
-      if (input.checked) {
-        if (!order.includes(opt.id)) order.push(opt.id);
-      } else {
-        const i = order.indexOf(opt.id);
-        if (i >= 0) order.splice(i, 1);
-      }
-      box.dataset.tiles = JSON.stringify(order);
-    });
-    lab.appendChild(input);
-    const span = document.createElement("span");
-    span.textContent = opt.label;
-    lab.appendChild(span);
-    box.appendChild(lab);
-  }
+  mountTileChips(box, order, (next) => {
+    box.dataset.tiles = JSON.stringify(next);
+  });
   box.dataset.tiles = JSON.stringify(order);
 }
 
@@ -838,7 +860,7 @@ function wireUi() {
     addCountdownRow({ label: "", at: tomorrow.toISOString() });
   });
   $("#btnAddBin").addEventListener("click", () => {
-    addBinRow({ label: "LANDFILL", weekday: "wed", every_weeks: 1 });
+    addBinRow({ label: "LANDFILL", weekday: "wed", every_weeks: 1, color: defaultBinColor("LANDFILL") });
   });
   $("#btnAddView").addEventListener("click", () =>
     addViewRow({

@@ -20,6 +20,33 @@ BLUE: Color = (60, 120, 255)
 PURPLE: Color = (180, 80, 220)
 GRAY: Color = (90, 90, 90)
 
+
+def parse_hex_color(value: object) -> str:
+    """Normalize to lowercase #rrggbb, or '' if empty/invalid."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) != 6:
+        return ""
+    try:
+        int(text, 16)
+    except ValueError:
+        return ""
+    return f"#{text.lower()}"
+
+
+def hex_to_rgb(value: str) -> Color | None:
+    """Parse #rrggbb (or rrggbb) into an RGB tuple."""
+    normalized = parse_hex_color(value)
+    if not normalized:
+        return None
+    raw = normalized[1:]
+    return (int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16))
+
 # 5×7 glyphs keyed by character. Each row is 5 bits left-aligned in a string of '#' / '.'.
 _FONT_5X7: dict[str, tuple[str, ...]] = {
     " ": (".....", ".....", ".....", ".....", ".....", ".....", "....."),

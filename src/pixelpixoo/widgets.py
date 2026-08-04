@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -20,7 +20,7 @@ from pixelpixoo.renderer import (
     WHITE,
     YELLOW,
     draw_text,
-    fit_scale,
+    hex_to_rgb,
     text_width,
 )
 from pixelpixoo.screens.bins import BinDue
@@ -30,7 +30,6 @@ from pixelpixoo.screens.bins import (
     local_today,
     upcoming_dues,
 )
-from pixelpixoo.screens.countdown import _format_remaining, _parse_target
 from pixelpixoo.screens.f1 import (
     _countdown,
     _when_short,
@@ -48,24 +47,22 @@ from pixelpixoo.screens.weather import (
 )
 from pixelpixoo.screens.weather import _fetch as _fetch_weather
 from pixelpixoo.theme import Theme
+from pixelpixoo.tile_draw import Rect, draw_tile_line
+from pixelpixoo.timeutil import (
+    compact_days,
+    format_remaining_pair,
+    parse_iso_datetime,
+    remaining_seconds,
+    urgency_color,
+)
 
 logger = logging.getLogger(__name__)
 
-Rect = tuple[int, int, int, int]  # x, y, w, h
 WEATHER_PAGE_SECONDS = 8.0
 
 
 def _traffic_timezone(cfg: AppConfig) -> str:
     return resolve_app_timezone(cfg)
-
-
-def _clip_text(text: str, max_w: int, *, tiny: bool, spacing: int) -> str:
-    if text_width(text, tiny=tiny, spacing=spacing) <= max_w:
-        return text
-    out = text
-    while out and text_width(out + ".", tiny=tiny, spacing=spacing) > max_w:
-        out = out[:-1]
-    return (out + ".") if out != text else out
 
 
 def _pad(img: Image.Image, rect: Rect, color: tuple[int, int, int] = (16, 18, 22)) -> None:
@@ -165,6 +162,7 @@ def _bins_dues(cfg: AppConfig) -> list[BinDue]:
             s.weekday,
             s.every_weeks,
             _parse_anchor(s.anchor),
+            s.color,
         )
         for s in bins.streams
     ]
@@ -187,32 +185,7 @@ def _line(
     *,
     hero: bool = False,
 ) -> None:
-    x, y, w, h = rect
-    tiny = theme.use_tiny_font
-    spacing = theme.spacing
-    scale = theme.hero if hero else theme.body
-    line_h = (theme.hero_h if hero else theme.body_h) + theme.line_gap
-    yy = y + 1 + row * line_h
-    if yy + (theme.hero_h if hero else theme.body_h) > y + h:
-        return
-    clipped = _clip_text(text.upper(), w - 2, tiny=tiny, spacing=spacing)
-    # Prefer dropping trailing period when a shorter token fits better
-    if clipped.endswith(".") and len(clipped) > 2:
-        alt = clipped[:-1]
-        if text_width(alt, scale=scale if not hero else theme.hero, tiny=tiny, spacing=spacing) <= w - 2:
-            clipped = alt
-    if hero:
-        scale = fit_scale(clipped, w - 2, prefer=theme.hero, tiny=tiny)
-    draw_text(
-        img,
-        clipped,
-        x + 1,
-        yy,
-        color,
-        scale=scale,
-        spacing=spacing,
-        tiny=tiny,
-    )
+    draw_tile_line(img, rect, theme, text, color, row, hero=hero)
 
 
 def _paint_weather(
@@ -488,15 +461,15 @@ def _paint_countdown(
     targets = cfg.countdown
     if ref:
         targets = [t for t in targets if t.label.upper() == ref.upper()] or targets[:1]
-    now = datetime.now(timezone.utc)
     target = targets[0]
-    remaining = (_parse_target(target.at) - now).total_seconds()
-    primary, _ = _format_remaining(remaining)
+    remaining = remaining_seconds(parse_iso_datetime(target.at))
+    primary, _ = format_remaining_pair(remaining)
     # Compact remaining for narrow cells: "147D" instead of "147D 03H"
-    if remaining > 86400:
-        days = int(remaining) // 86400
-        primary = f"{days}D"
-    color = GREEN if remaining <= 0 else (RED if remaining < 86400 else ORANGE)
+    if rect[2] < 40:
+        days_only = compact_days(remaining)
+        if days_only is not None:
+            primary = days_only
+    color = urgency_color(remaining, use_week_band=False)
     # Line 1 label (neutral), line 2 countdown coloured by urgency
     _line(img, rect, theme, target.label, WHITE, 0)
     _line(img, rect, theme, primary, color, 1)
@@ -514,7 +487,12 @@ def _paint_bins(
         _line(img, rect, theme, "CLEAR", DIM, 1)
         return
     line1, line2, urgency = format_bin_lines(dues)
-    if urgency <= 0:
+    soonest = dues[0].days_until
+    group = [d for d in dues if d.days_until == soonest]
+    custom = next((hex_to_rgb(d.color) for d in group if d.color), None)
+    if custom is not None:
+        color = custom
+    elif urgency <= 0:
         color = ORANGE
     elif urgency == 1:
         color = YELLOW

@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 import httpx
 from PIL import Image
 
-from pixelpixoo.config import F1Config, F1_SESSION_IDS
+from pixelpixoo.cache import TtlCache
+from pixelpixoo.config import F1_SESSION_IDS, F1Config
 from pixelpixoo.renderer import (
     BLACK,
     CYAN,
@@ -20,16 +21,18 @@ from pixelpixoo.renderer import (
     draw_centered,
     draw_label_bar,
     draw_text,
-    error_frame,
     fit_scale,
     new_canvas,
     text_width,
 )
+from pixelpixoo.screens.base import BaseScreen
 from pixelpixoo.theme import Theme, theme_for
+from pixelpixoo.timeutil import format_remaining, parse_session_datetime
 
 logger = logging.getLogger(__name__)
 
 JOLPICA_NEXT = "https://api.jolpi.ca/ergast/f1/current/next.json"
+_F1_TTL_SEC = 3600.0
 
 # Jolpica field name → session id → short label
 _SESSION_FIELDS: tuple[tuple[str, str, str], ...] = (
@@ -57,6 +60,9 @@ class NextRace:
     country: str
     start: datetime  # race start
     sessions: list[SessionEvent] = field(default_factory=list)
+
+
+_race_cache = TtlCache[NextRace]()
 
 
 def _shorten(name: str, max_len: int = 10) -> str:
@@ -96,22 +102,14 @@ def race_title(name: str, max_len: int = 12) -> str:
 
 
 def _parse_session_dt(block: dict) -> datetime | None:
-    date = block.get("date")
-    if not date:
-        return None
-    time_str = block.get("time") or "12:00:00Z"
-    if time_str.endswith("Z"):
-        time_str = time_str[:-1] + "+00:00"
-    try:
-        start = datetime.fromisoformat(f"{date}T{time_str}")
-    except ValueError:
-        return None
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    return start
+    return parse_session_datetime(str(block.get("date") or ""), block.get("time"))
 
 
 def _fetch(client: httpx.Client) -> NextRace:
+    cached = _race_cache.get("next", _F1_TTL_SEC)
+    if cached is not None:
+        return cached
+
     response = client.get(JOLPICA_NEXT)
     response.raise_for_status()
     races = response.json()["MRData"]["RaceTable"]["Races"]
@@ -137,29 +135,21 @@ def _fetch(client: httpx.Client) -> NextRace:
             continue
         sessions.append(SessionEvent(session_id=sid, label=label, start=start))
     sessions.sort(key=lambda s: s.start)
-    return NextRace(
+    result = NextRace(
         race_name=str(race["raceName"]),
         circuit=str(circuit["circuitName"]),
         country=str(circuit["Location"]["country"]),
         start=race_start,
         sessions=sessions,
     )
+    _race_cache.set("next", result)
+    return result
 
 
 def _countdown(start: datetime) -> str:
     now = datetime.now(timezone.utc)
     seconds = (start - now).total_seconds()
-    if seconds <= 0:
-        return "LIVE"
-    total = int(seconds)
-    days, rem = divmod(total, 86400)
-    hours, rem = divmod(rem, 3600)
-    minutes = rem // 60
-    if days >= 1:
-        return f"{days}D {hours}H"
-    if hours >= 1:
-        return f"{hours}H {minutes}M"
-    return f"{minutes}M"
+    return format_remaining(seconds, zero_label="LIVE", pad_hours=False)
 
 
 def _when_short(start: datetime) -> str:
@@ -189,8 +179,9 @@ def filter_sessions(race: NextRace, cfg: F1Config) -> list[SessionEvent]:
     return upcoming
 
 
-class F1Screen:
+class F1Screen(BaseScreen):
     name = "f1"
+    error_label = "F1"
 
     def __init__(
         self,
@@ -198,42 +189,13 @@ class F1Screen:
         theme: Theme | None = None,
         cfg: F1Config | None = None,
     ) -> None:
+        super().__init__(client, timeout=15.0)
         self.cfg = cfg or F1Config()
         self.theme = theme or theme_for("normal")
-        self._client = client or httpx.Client(timeout=15.0)
-        self._owns_client = client is None
-        self._last: Image.Image | None = None
-        self._cached: NextRace | None = None
-        self._cached_at: datetime | None = None
 
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def _get_race(self) -> NextRace:
-        now = datetime.now(timezone.utc)
-        if (
-            self._cached is not None
-            and self._cached_at is not None
-            and (now - self._cached_at).total_seconds() < 3600
-        ):
-            return self._cached
+    def _render(self) -> Image.Image:
         race = _fetch(self._client)
-        self._cached = race
-        self._cached_at = now
-        return race
-
-    def render(self) -> Image.Image:
-        try:
-            race = self._get_race()
-            img = self._paint(race)
-            self._last = img.copy()
-            return img
-        except Exception:
-            logger.exception("F1 fetch failed")
-            if self._last is not None:
-                return self._last
-            return error_frame("F1")
+        return self._paint(race)
 
     def _paint(self, race: NextRace) -> Image.Image:
         t = self.theme

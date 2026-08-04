@@ -475,7 +475,14 @@ input[type="range"] {
 }
 
 .countdown-row { grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.2fr) auto; }
-.bin-row { grid-template-columns: minmax(110px, 0.8fr) minmax(100px, 0.7fr) minmax(110px, 0.7fr) minmax(160px, 1.1fr) auto; }
+.bin-row { grid-template-columns: minmax(110px, 0.8fr) auto minmax(100px, 0.7fr) minmax(110px, 0.7fr) minmax(160px, 1.1fr) auto; }
+.bin-color input[type="color"] {
+  width: 2.6rem;
+  height: 2.4rem;
+  padding: 0.15rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
 
 input[type="datetime-local"] {
   color-scheme: dark;
@@ -604,6 +611,14 @@ input[type="datetime-local"] {
   grid-template-columns: 90px 1fr auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.row-pattern-actions-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .row-badge {

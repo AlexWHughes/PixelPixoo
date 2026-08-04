@@ -26,6 +26,14 @@ DAY_ALIASES = {
     "sunday": 6,
 }
 
+# Canonical short weekday keys for YAML / public API (0=Mon .. 6=Sun)
+WEEKDAY_YAML = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+WEEKDAYS_SHORT = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+WEEKDAYS_TITLE = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+WEEKDAYS_LONG = ("Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun")
+
+DEFAULT_TZ = "Australia/Sydney"
+
 
 @dataclass
 class ScheduleWindow:
@@ -142,14 +150,13 @@ def is_schedule_active(cfg: ScheduleConfig, now: datetime | None = None) -> bool
 
 
 def schedule_public_dict(cfg: ScheduleConfig) -> dict:
-    day_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     return {
         "enabled": cfg.enabled,
         "timezone": cfg.timezone,
         "outside": cfg.outside,
         "windows": [
             {
-                "days": [day_names[d] for d in w.days] if w.days else ["all"],
+                "days": [WEEKDAY_YAML[d] for d in w.days] if w.days else ["all"],
                 "start": w.start,
                 "end": w.end,
             }

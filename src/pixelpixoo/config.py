@@ -10,7 +10,8 @@ from typing import Any
 
 import yaml
 
-from pixelpixoo.schedule import ScheduleConfig, parse_schedule
+from pixelpixoo.renderer import parse_hex_color
+from pixelpixoo.schedule import DEFAULT_TZ, ScheduleConfig, parse_schedule
 from pixelpixoo.screens.bins import LABEL_MAX as BIN_LABEL_MAX
 from pixelpixoo.screens.bins import _parse_anchor, parse_weekday
 from pixelpixoo.theme import coerce_layout, coerce_text_scale, coerce_view_layout
@@ -68,12 +69,13 @@ class BinStream:
     weekday: int  # collection day, 0=Mon .. 6=Sun
     every_weeks: int = 1
     anchor: str = ""  # ISO collection date for fortnightly alignment
+    color: str = ""  # optional #rrggbb for the bin label on the Pixoo
 
 
 @dataclass
 class BinsConfig:
     enabled: bool = True
-    timezone: str = "Australia/Sydney"
+    timezone: str = DEFAULT_TZ
     # Show tile when put-out is within this many days (0=tonight only).
     lead_days: int = 1
     # True = Australian "bin night": put bins out the evening before collection.
@@ -154,7 +156,7 @@ class AppConfig:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
 
-def resolve_app_timezone(cfg: AppConfig, *, default: str = "Australia/Sydney") -> str:
+def resolve_app_timezone(cfg: AppConfig, *, default: str = DEFAULT_TZ) -> str:
     """Prefer weather TZ, then schedule TZ, then default (used by traffic TTL etc.)."""
     if cfg.weather and cfg.weather.timezone:
         return cfg.weather.timezone
@@ -169,22 +171,11 @@ def _require(data: dict[str, Any], key: str) -> Any:
     return data[key]
 
 
-def _env_from_dotenv() -> dict[str, str]:
-    path = Path(os.environ.get("PIXELPIXOO_ENV", ".env"))
-    values: dict[str, str] = {}
-    if not path.is_file():
-        return values
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, raw = stripped.partition("=")
-        values[key.strip()] = raw.strip().strip('"').strip("'")
-    return values
-
-
 def _secret(name: str) -> str:
-    return os.environ.get(name, "") or _env_from_dotenv().get(name, "")
+    # Local import avoids a config ↔ persist cycle at module load.
+    from pixelpixoo.persist import read_env_file
+
+    return os.environ.get(name, "") or read_env_file().get(name, "")
 
 
 def _parse_row_pattern(raw: object) -> list[int]:
@@ -268,6 +259,7 @@ def _parse_bins(raw: object) -> BinsConfig | None:
                 weekday=weekday,
                 every_weeks=every,
                 anchor=anchor[:10] if anchor else "",
+                color=parse_hex_color(item.get("color", "")),
             )
         )
     if not streams:
@@ -282,7 +274,7 @@ def _parse_bins(raw: object) -> BinsConfig | None:
         eve = eve.strip().lower() not in ("0", "false", "no", "morning")
     return BinsConfig(
         enabled=True,
-        timezone=str(raw.get("timezone", "Australia/Sydney")),
+        timezone=str(raw.get("timezone", DEFAULT_TZ)),
         lead_days=lead,
         eve_before=bool(eve),
         streams=streams,

@@ -65,14 +65,17 @@ bins:
     - label: LANDFILL
       weekday: wed
       every_weeks: 1
+      color: "#dc3c3c"   # optional; omit to use urgency colours
     - label: RECYCLE
       weekday: wed
       every_weeks: 2
       anchor: "2026-01-07"  # a known recycle collection date
+      color: "#ffd23c"
     - label: GREEN
       weekday: wed
       every_weeks: 2
       anchor: "2026-01-14"  # opposite fortnight
+      color: "#3cc864"
 
 schedule:
   enabled: false

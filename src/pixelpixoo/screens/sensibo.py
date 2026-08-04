@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import httpx
 from PIL import Image
 
+from pixelpixoo.cache import TtlCache
 from pixelpixoo.config import LABEL_MAX, SensiboConfig
 from pixelpixoo.renderer import (
     BLACK,
@@ -21,10 +22,10 @@ from pixelpixoo.renderer import (
     draw_centered,
     draw_label_bar,
     draw_text,
-    error_frame,
     fit_scale,
     new_canvas,
 )
+from pixelpixoo.screens.base import BaseScreen
 from pixelpixoo.theme import Theme, theme_for
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,7 @@ POD_FIELDS = "id,room,acState,measurements"
 # Sensibo rate limits are tight (~10 req / 10s with gzip). Prefer one bulk
 # /users/me/pods call and reuse it across tiles/frames.
 _POD_CACHE_TTL = 120.0
-_pod_cache: dict[str, tuple[float, list[dict]]] = {}
-_snapshot_cache: dict[str, tuple[float, "SensiboSnapshot"]] = {}
+_pod_cache: TtlCache[list[dict]] = TtlCache()
 _rate_limited_until: float = 0.0
 
 
@@ -48,6 +48,9 @@ class SensiboSnapshot:
     ac_on: bool | None
     mode: str | None
     target_c: int | None
+
+
+_snapshot_cache: TtlCache[SensiboSnapshot] = TtlCache()
 
 
 def _short_room(name: str, max_len: int = 8) -> str:
@@ -64,26 +67,18 @@ def _snapshot_key(api_key: str, pod_id: str) -> str:
 
 def _store_snapshots_from_pods(api_key: str, pods: list[dict]) -> None:
     """Warm per-pod snapshot cache from a bulk pods response."""
-    now = time.monotonic()
     for raw in pods:
         snap = _parse_pod(raw)
         if snap.pod_id:
-            _snapshot_cache[_snapshot_key(api_key, snap.pod_id)] = (now, snap)
+            _snapshot_cache.set(_snapshot_key(api_key, snap.pod_id), snap)
 
 
 def _cached_snapshot(api_key: str, pod_id: str) -> SensiboSnapshot | None:
-    entry = _snapshot_cache.get(_snapshot_key(api_key, pod_id))
-    if not entry:
-        return None
-    cached_at, snap = entry
-    if time.monotonic() - cached_at < _POD_CACHE_TTL:
-        return snap
-    return None
+    return _snapshot_cache.get(_snapshot_key(api_key, pod_id), _POD_CACHE_TTL)
 
 
 def _stale_snapshot(api_key: str, pod_id: str) -> SensiboSnapshot | None:
-    entry = _snapshot_cache.get(_snapshot_key(api_key, pod_id))
-    return entry[1] if entry else None
+    return _snapshot_cache.get_stale(_snapshot_key(api_key, pod_id))
 
 
 def _mark_rate_limited(retry_after: float | None = None) -> None:
@@ -99,12 +94,12 @@ def _under_rate_limit() -> bool:
 
 def _list_pods(api_key: str, client: httpx.Client) -> list[dict]:
     global _rate_limited_until
-    now = time.monotonic()
-    cached = _pod_cache.get(api_key)
-    if cached and now - cached[0] < _POD_CACHE_TTL:
-        return cached[1]
-    if _under_rate_limit() and cached:
-        return cached[1]
+    fresh = _pod_cache.get(api_key, _POD_CACHE_TTL)
+    if fresh is not None:
+        return fresh
+    stale = _pod_cache.get_stale(api_key)
+    if _under_rate_limit() and stale is not None:
+        return stale
 
     try:
         response = client.get(
@@ -115,16 +110,16 @@ def _list_pods(api_key: str, client: httpx.Client) -> list[dict]:
         if response.status_code == 429:
             retry = response.headers.get("Retry-After")
             _mark_rate_limited(float(retry) if retry else None)
-            if cached:
-                return cached[1]
+            if stale is not None:
+                return stale
             response.raise_for_status()
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         if exc.response is not None and exc.response.status_code == 429:
             retry = exc.response.headers.get("Retry-After")
             _mark_rate_limited(float(retry) if retry else None)
-            if cached:
-                return cached[1]
+            if stale is not None:
+                return stale
         raise
 
     payload = response.json()
@@ -133,8 +128,7 @@ def _list_pods(api_key: str, client: httpx.Client) -> list[dict]:
     result = payload.get("result", payload)
     if not isinstance(result, list):
         raise RuntimeError("Unexpected Sensibo pods response")
-    completed = time.monotonic()
-    _pod_cache[api_key] = (completed, result)
+    _pod_cache.set(api_key, result)
     _store_snapshots_from_pods(api_key, result)
     _rate_limited_until = 0.0
     logger.debug("Sensibo pods refresh (%d devices, ttl %.0fs)", len(result), _POD_CACHE_TTL)
@@ -228,7 +222,7 @@ def fetch_snapshot(api_key: str, pod_id: str, client: httpx.Client) -> SensiboSn
     for raw in pods:
         snap = _parse_pod(raw)
         if snap.pod_id == pod_id:
-            _snapshot_cache[_snapshot_key(api_key, pod_id)] = (time.monotonic(), snap)
+            _snapshot_cache.set(_snapshot_key(api_key, pod_id), snap)
             return snap
 
     if _under_rate_limit():
@@ -286,11 +280,13 @@ def fetch_snapshot(api_key: str, pod_id: str, client: httpx.Client) -> SensiboSn
                 _mark_rate_limited()
         except Exception:
             logger.debug("Sensibo measurements fallback failed for %s", pod_id, exc_info=True)
-    _snapshot_cache[_snapshot_key(api_key, pod_id)] = (time.monotonic(), snap)
+    _snapshot_cache.set(_snapshot_key(api_key, pod_id), snap)
     return snap
 
 
-class SensiboScreen:
+class SensiboScreen(BaseScreen):
+    error_label = "AC"
+
     def __init__(
         self,
         label: str,
@@ -299,30 +295,17 @@ class SensiboScreen:
         client: httpx.Client | None = None,
         theme: Theme | None = None,
     ) -> None:
+        super().__init__(client, timeout=20.0)
         self.label = label
         self.pod_id = pod_id
         self.cfg = cfg
         self.theme = theme or theme_for("normal")
         self.name = f"sensibo:{label}"
-        self._client = client or httpx.Client(timeout=20.0)
-        self._owns_client = client is None
-        self._last: Image.Image | None = None
+        self.error_label = label[:8] or "AC"
 
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def render(self) -> Image.Image:
-        try:
-            snap = fetch_snapshot(self.cfg.api_key, self.pod_id, self._client)
-            img = self._paint(snap)
-            self._last = img.copy()
-            return img
-        except Exception:
-            logger.exception("Sensibo fetch failed for %s", self.label)
-            if self._last is not None:
-                return self._last
-            return error_frame(self.label[:8] or "AC")
+    def _render(self) -> Image.Image:
+        snap = fetch_snapshot(self.cfg.api_key, self.pod_id, self._client)
+        return self._paint(snap)
 
     def _paint(self, snap: SensiboSnapshot) -> Image.Image:
         t = self.theme

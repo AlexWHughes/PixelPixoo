@@ -9,41 +9,31 @@ import httpx
 from PIL import Image, ImageDraw
 
 from pixelpixoo.config import AppConfig, ViewConfig
-from pixelpixoo.renderer import BLACK, CYAN, draw_label_bar, error_frame, new_canvas
+from pixelpixoo.renderer import BLACK, CYAN, draw_label_bar, new_canvas
+from pixelpixoo.screens.base import BaseScreen
 from pixelpixoo.theme import Theme, layout_rects, row_pattern_rects, theme_for
 from pixelpixoo.widgets import default_tiles, paint_tile, visible_tiles
 
 logger = logging.getLogger(__name__)
 
 
-class CompositeScreen:
+class CompositeScreen(BaseScreen):
+    error_label = "VIEW"
+
     def __init__(
         self,
         view: ViewConfig,
         cfg: AppConfig,
         client: httpx.Client | None = None,
     ) -> None:
+        super().__init__(client, timeout=20.0)
         self.view = view
         self.cfg = cfg
         self.name = f"view:{view.name}"
-        self._client = client or httpx.Client(timeout=20.0)
-        self._owns_client = client is None
-        self._last: Image.Image | None = None
+        self.error_label = view.name[:8] or "VIEW"
 
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def render(self) -> Image.Image:
-        try:
-            img = self._paint()
-            self._last = img.copy()
-            return img
-        except Exception:
-            logger.exception("View %s failed", self.view.name)
-            if self._last is not None:
-                return self._last
-            return error_frame(self.view.name[:8] or "VIEW")
+    def _render(self) -> Image.Image:
+        return self._paint()
 
     def _paint(self) -> Image.Image:
         theme = theme_for(self.view.text_scale)
@@ -149,7 +139,8 @@ def build_view_screens(
             screens.append(CompositeScreen(view, cfg, client=http))
         return screens
 
-    tiles = visible_tiles(cfg, display.tiles or default_tiles(cfg))
+    source_tiles = display.tiles or default_tiles(cfg)
+    tiles = visible_tiles(cfg, source_tiles)
     if not tiles:
         return []
 
@@ -170,7 +161,7 @@ def build_view_screens(
                     text_scale=scale if scale != "large" else "compact",
                     show_header=header,
                     show_borders=borders,
-                    tiles=tiles,
+                    tiles=list(source_tiles),
                 ),
                 cfg,
                 client=http,
@@ -188,7 +179,7 @@ def build_view_screens(
                     text_scale=scale if scale != "large" else "compact",
                     show_header=header,
                     show_borders=borders,
-                    tiles=tiles,
+                    tiles=list(source_tiles),
                     row_pattern=pattern,
                 ),
                 cfg,

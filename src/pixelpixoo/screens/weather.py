@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import httpx
 from PIL import Image, ImageDraw
 
+from pixelpixoo.cache import TtlCache
 from pixelpixoo.config import WeatherConfig
 from pixelpixoo.renderer import (
     BLACK,
@@ -23,11 +24,12 @@ from pixelpixoo.renderer import (
     draw_centered,
     draw_label_bar,
     draw_text,
-    error_frame,
     fit_scale,
     new_canvas,
     set_pixel,
 )
+from pixelpixoo.schedule import WEEKDAYS_LONG, WEEKDAYS_TITLE
+from pixelpixoo.screens.base import BaseScreen
 from pixelpixoo.theme import Theme, theme_for
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,7 @@ class WeatherData:
     forecast: list[DayForecast] = field(default_factory=list)
 
 
-_weather_cache: dict[str, tuple[float, WeatherData]] = {}
+_weather_cache: TtlCache[WeatherData] = TtlCache()
 
 
 def _cache_key(cfg: WeatherConfig) -> str:
@@ -101,11 +103,11 @@ def _parse_payload(data: dict) -> WeatherData:
 
 def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
     key = _cache_key(cfg)
-    now_mono = time.monotonic()
-    cached = _weather_cache.get(key)
-    if cached and now_mono - cached[0] < _WEATHER_TTL_SEC:
-        return cached[1]
+    fresh = _weather_cache.get(key, _WEATHER_TTL_SEC)
+    if fresh is not None:
+        return fresh
 
+    entry = _weather_cache.get_entry(key)
     days = max(1, min(7, cfg.forecast_days))
     params = {
         "latitude": cfg.latitude,
@@ -123,17 +125,17 @@ def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
         response.raise_for_status()
         weather = _parse_payload(response.json())
     except Exception as exc:
-        if cached is not None:
-            age = int(now_mono - cached[0])
+        if entry is not None:
+            age = int(time.monotonic() - entry[0])
             logger.warning(
                 "Weather fetch failed (%s); using cached data (%ds old)",
                 exc,
                 age,
             )
-            return cached[1]
+            return entry[1]
         raise
 
-    _weather_cache[key] = (time.monotonic(), weather)
+    _weather_cache.set(key, weather)
     return weather
 
 
@@ -180,14 +182,15 @@ def _ordinal(day: int) -> str:
     return f"{day}{suffix}"
 
 
-_WEEKDAYS = ("Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun")
-_WEEKDAYS_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+# Back-compat aliases for widgets
+_WEEKDAYS = WEEKDAYS_LONG
+_WEEKDAYS_SHORT = WEEKDAYS_TITLE
 
 
 def _day_label(d: date, *, today: date | None = None, short: bool = False) -> str:
     """Top-line date, e.g. Sat 25th."""
     del today
-    name = _WEEKDAYS_SHORT[d.weekday()] if short else _WEEKDAYS[d.weekday()]
+    name = WEEKDAYS_TITLE[d.weekday()] if short else WEEKDAYS_LONG[d.weekday()]
     return f"{name} {_ordinal(d.day)}"
 
 
@@ -252,8 +255,9 @@ def draw_tiny_rain_cloud(
     return 5
 
 
-class WeatherScreen:
+class WeatherScreen(BaseScreen):
     name = "weather"
+    error_label = "WX"
 
     def __init__(
         self,
@@ -261,27 +265,13 @@ class WeatherScreen:
         client: httpx.Client | None = None,
         theme: Theme | None = None,
     ) -> None:
+        super().__init__(client, timeout=15.0)
         self.cfg = cfg
         self.theme = theme or theme_for("normal")
-        self._client = client or httpx.Client(timeout=15.0)
-        self._owns_client = client is None
-        self._last: Image.Image | None = None
 
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def render(self) -> Image.Image:
-        try:
-            data = _fetch(self.cfg, self._client)
-            img = self._paint(data)
-            self._last = img.copy()
-            return img
-        except Exception:
-            logger.exception("Weather fetch failed")
-            if self._last is not None:
-                return self._last
-            return error_frame("WX")
+    def _render(self) -> Image.Image:
+        data = _fetch(self.cfg, self._client)
+        return self._paint(data)
 
     def _paint(self, data: WeatherData) -> Image.Image:
         t = self.theme

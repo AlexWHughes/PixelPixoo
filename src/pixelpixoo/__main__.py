@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
@@ -16,6 +17,10 @@ from pixelpixoo.persist import configure_logging
 from pixelpixoo.runtime import os_environ_preview, runtime
 
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").lower() in ("1", "true", "yes")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -61,11 +66,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    verbose = args.verbose or os.environ.get("PIXELPIXOO_VERBOSE", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    verbose = args.verbose or _env_flag("PIXELPIXOO_VERBOSE")
     configure_logging(verbose=verbose)
 
     if args.config:
@@ -74,42 +75,52 @@ def main(argv: list[str] | None = None) -> None:
     preview = args.preview
     if preview is None and os_environ_preview():
         preview = Path(os_environ_preview())
-    once = args.once or os.environ.get("PIXELPIXOO_ONCE", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    no_web = args.no_web or os.environ.get("PIXELPIXOO_NO_WEB", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    once = args.once or _env_flag("PIXELPIXOO_ONCE")
+    no_web = args.no_web or _env_flag("PIXELPIXOO_NO_WEB")
 
     cfg = load_config()
     runtime.start(cfg, preview_dir=preview, once=once)
 
-    if once or no_web:
-        # Wait for loop thread to finish (once) or block until signal
-        def _stop(signum: int, _frame: object) -> None:
-            logger.info("Signal %s — stopping", signum)
-            runtime.stop()
+    def _stop(signum: int, _frame: object, *, hard_exit: bool) -> None:
+        logger.info("Signal %s — stopping", signum)
+        runtime.stop(timeout=5 if hard_exit else 10)
+        if hard_exit:
+            # uvicorn will exit via KeyboardInterrupt in main thread usually;
+            # force process exit for SIGTERM in Docker
+            os._exit(0)
 
-        signal.signal(signal.SIGINT, _stop)
-        signal.signal(signal.SIGTERM, _stop)
+    if once or no_web:
+        stopped = False
+
+        def _stop_loop(signum: int, _frame: object) -> None:
+            nonlocal stopped
+            _stop(signum, _frame, hard_exit=False)
+            stopped = True
+
+        signal.signal(signal.SIGINT, _stop_loop)
+        signal.signal(signal.SIGTERM, _stop_loop)
         thread = runtime._thread
         if thread:
-            thread.join()
+            # Short-interval joins so signals are handled promptly; after stop()
+            # (which already joins with a timeout), do not wait forever.
+            deadline: float | None = None
+            while thread.is_alive():
+                if stopped:
+                    if deadline is None:
+                        deadline = time.monotonic() + 1.0
+                    if time.monotonic() >= deadline:
+                        logger.warning(
+                            "Runtime thread still alive after shutdown deadline"
+                        )
+                        break
+                thread.join(timeout=0.5)
         return
 
-    def _stop(signum: int, _frame: object) -> None:
-        logger.info("Signal %s — shutting down", signum)
-        runtime.stop(timeout=5)
-        # uvicorn will exit via KeyboardInterrupt in main thread usually;
-        # force process exit for SIGTERM in Docker
-        os._exit(0)
+    def _stop_web(signum: int, _frame: object) -> None:
+        _stop(signum, _frame, hard_exit=True)
 
-    signal.signal(signal.SIGINT, _stop)
-    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop_web)
+    signal.signal(signal.SIGTERM, _stop_web)
 
     logger.info("Web UI on http://%s:%s", args.host, args.port)
     uvicorn.run(

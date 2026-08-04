@@ -192,7 +192,7 @@
           </div>
 
           <div id="rowPatternPanel" class="row-pattern-panel" hidden>
-            <p class="field-label">Row pattern <small>1 = full width · 2 = split</small></p>
+            <p class="field-label">Row pattern <small>1 = full width · 2 = split · ↑↓ to reorder</small></p>
             <div class="row-pattern-actions">
               <button type="button" class="btn tiny" id="btnAddRow1">+ Full (1)</button>
               <button type="button" class="btn tiny" id="btnAddRow2">+ Split (2)</button>
@@ -469,6 +469,10 @@
   <template id="tplBin">
     <div class="card-row bin-row">
       <label><span>Label</span><input data-f="label" maxlength="12" placeholder="LANDFILL" /></label>
+      <label class="bin-color">
+        <span>Colour</span>
+        <input data-f="color" type="color" value="#ff8c28" />
+      </label>
       <label>
         <span>Collection day</span>
         <select data-f="weekday">

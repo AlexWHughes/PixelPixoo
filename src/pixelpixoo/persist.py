@@ -18,12 +18,11 @@ from pixelpixoo.config import (
     LABEL_MAX,
     load_config,
 )
-from pixelpixoo.schedule import schedule_public_dict
+from pixelpixoo.renderer import parse_hex_color
+from pixelpixoo.schedule import DEFAULT_TZ, WEEKDAY_YAML, schedule_public_dict
 from pixelpixoo.screens.bins import LABEL_MAX as BIN_LABEL_MAX
 
 logger = logging.getLogger(__name__)
-
-_WEEKDAY_YAML = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 SECRET_KEYS = ("PIXOO_IP", "GOOGLE_MAPS_API_KEY", "SENSIBO_API_KEY", "PIXELPIXOO_PREVIEW")
 EXPORT_FORMAT = "pixelpixoo-config"
@@ -193,7 +192,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
         "latitude": loaded.weather.latitude if loaded.weather else weather_raw.get("latitude", -33.8688),
         "longitude": loaded.weather.longitude if loaded.weather else weather_raw.get("longitude", 151.2093),
         "label": loaded.weather.label if loaded.weather else weather_raw.get("label", "HOME"),
-        "timezone": loaded.weather.timezone if loaded.weather else weather_raw.get("timezone", "Australia/Sydney"),
+        "timezone": loaded.weather.timezone if loaded.weather else weather_raw.get("timezone", DEFAULT_TZ),
         "forecast_days": loaded.weather.forecast_days if loaded.weather else int(weather_raw.get("forecast_days", 1)),
         "show_current": loaded.weather.show_current if loaded.weather else bool(weather_raw.get("show_current", True)),
         "show_forecast": loaded.weather.show_forecast if loaded.weather else bool(weather_raw.get("show_forecast", False)),
@@ -611,9 +610,10 @@ def _bins_public(loaded: AppConfig, raw: dict[str, Any]) -> dict[str, Any]:
         streams = [
             {
                 "label": s.label,
-                "weekday": _WEEKDAY_YAML[s.weekday],
+                "weekday": WEEKDAY_YAML[s.weekday],
                 "every_weeks": s.every_weeks,
                 "anchor": s.anchor,
+                "color": s.color,
             }
             for s in loaded.bins.streams
         ]
@@ -634,11 +634,12 @@ def _bins_public(loaded: AppConfig, raw: dict[str, Any]) -> dict[str, Any]:
                 "weekday": str(item.get("weekday", item.get("day", "wed"))),
                 "every_weeks": int(item.get("every_weeks", item.get("every", 1)) or 1),
                 "anchor": str(item.get("anchor", "") or ""),
+                "color": parse_hex_color(item.get("color", "")),
             }
         )
     return {
         "enabled": bool(bins_raw.get("enabled", False)),
-        "timezone": str(bins_raw.get("timezone", "Australia/Sydney")),
+        "timezone": str(bins_raw.get("timezone", DEFAULT_TZ)),
         "lead_days": int(bins_raw.get("lead_days", 1)),
         "eve_before": bool(bins_raw.get("eve_before", True)),
         "streams": streams,
@@ -807,6 +808,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
             continue
         every = max(1, min(8, int(item.get("every_weeks", item.get("every", 1)) or 1)))
         anchor = str(item.get("anchor", "") or "").strip()[:10]
+        color = parse_hex_color(item.get("color", ""))
         entry: dict[str, Any] = {
             "label": label,
             "weekday": weekday,
@@ -814,10 +816,12 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         }
         if anchor:
             entry["anchor"] = anchor
+        if color:
+            entry["color"] = color
         bin_streams.append(entry)
     yaml_data["bins"] = {
         "enabled": bool(bins.get("enabled", True)) and bool(bin_streams),
-        "timezone": str(bins.get("timezone", "Australia/Sydney")),
+        "timezone": str(bins.get("timezone", DEFAULT_TZ)),
         "lead_days": max(0, min(6, int(bins.get("lead_days", 1)))),
         "eve_before": bool(bins.get("eve_before", True)),
         "streams": bin_streams,
@@ -884,7 +888,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         windows.append({"days": days, "start": start, "end": end})
     yaml_data["schedule"] = {
         "enabled": bool(schedule.get("enabled", False)),
-        "timezone": str(schedule.get("timezone", "Australia/Sydney")),
+        "timezone": str(schedule.get("timezone", DEFAULT_TZ)),
         "outside": str(schedule.get("outside", "off")),
         "windows": windows,
     }

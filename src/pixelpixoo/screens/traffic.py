@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from PIL import Image
 
+from pixelpixoo.cache import TtlCache
 from pixelpixoo.config import TrafficConfig, TrafficRoute
 from pixelpixoo.renderer import (
     BLACK,
@@ -22,10 +22,11 @@ from pixelpixoo.renderer import (
     draw_centered,
     draw_label_bar,
     draw_text,
-    error_frame,
     fit_scale,
     new_canvas,
 )
+from pixelpixoo.schedule import DEFAULT_TZ
+from pixelpixoo.screens.base import BaseScreen
 from pixelpixoo.theme import Theme, theme_for
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,12 @@ DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
 # Peak commute: refresh often; overnight: slower to save Directions quota
 _TRAFFIC_TTL_DAY_SEC = 15 * 60
 _TRAFFIC_TTL_NIGHT_SEC = 30 * 60
-_TRAFFIC_DAY_START_HOUR = 6   # 06:00 inclusive
-_TRAFFIC_DAY_END_HOUR = 20    # 20:00 exclusive
-_DEFAULT_TZ = "Australia/Sydney"
+_TRAFFIC_DAY_START_HOUR = 6  # 06:00 inclusive
+_TRAFFIC_DAY_END_HOUR = 20  # 20:00 exclusive
+
+_AVG_WINDOW = 16
+_AVG_MIN_SAMPLES = 3
+_traffic_history: dict[str, list[int]] = {}
 
 
 @dataclass
@@ -48,11 +52,7 @@ class RouteEta:
     avg_traffic_min: int | None = None
 
 
-_route_cache: dict[str, tuple[float, RouteEta]] = {}
-# Rolling travel-time history per route (samples from successful API refreshes)
-_AVG_WINDOW = 16
-_AVG_MIN_SAMPLES = 3
-_traffic_history: dict[str, list[int]] = {}
+_route_cache: TtlCache[RouteEta] = TtlCache()
 
 
 def _cache_key(route: TrafficRoute) -> str:
@@ -73,11 +73,11 @@ def _record_traffic_sample(key: str, traffic_min: int) -> None:
         del hist[:-_AVG_WINDOW]
 
 
-def _traffic_ttl_seconds(tz_name: str = _DEFAULT_TZ) -> float:
+def _traffic_ttl_seconds(tz_name: str = DEFAULT_TZ) -> float:
     try:
         now = datetime.now(ZoneInfo(tz_name))
     except (ZoneInfoNotFoundError, ValueError):
-        now = datetime.now(ZoneInfo(_DEFAULT_TZ))
+        now = datetime.now(ZoneInfo(DEFAULT_TZ))
     if _TRAFFIC_DAY_START_HOUR <= now.hour < _TRAFFIC_DAY_END_HOUR:
         return float(_TRAFFIC_TTL_DAY_SEC)
     return float(_TRAFFIC_TTL_NIGHT_SEC)
@@ -88,17 +88,16 @@ def _fetch_route(
     api_key: str,
     client: httpx.Client,
     *,
-    timezone: str = _DEFAULT_TZ,
+    timezone: str = DEFAULT_TZ,
 ) -> RouteEta:
     if not api_key:
         raise RuntimeError("GOOGLE_MAPS_API_KEY not set")
 
     key = _cache_key(route)
-    now_mono = time.monotonic()
-    cached = _route_cache.get(key)
     ttl = _traffic_ttl_seconds(timezone)
-    if cached and now_mono - cached[0] < ttl:
-        return cached[1]
+    cached = _route_cache.get(key, ttl)
+    if cached is not None:
+        return cached
 
     params = {
         "origin": route.origin,
@@ -132,7 +131,7 @@ def _fetch_route(
         avg_traffic_min=avg_min,
     )
     _record_traffic_sample(key, traffic_min)
-    _route_cache[key] = (time.monotonic(), eta)
+    _route_cache.set(key, eta)
     logger.debug(
         "Traffic refresh %s → %sm (avg %s, ttl %.0fs)",
         route.name,
@@ -159,8 +158,10 @@ def _eta_color(traffic_min: int, baseline_min: int) -> tuple[int, int, int]:
     return RED
 
 
-class TrafficScreen:
+class TrafficScreen(BaseScreen):
     """One slide for a single configured commute route."""
+
+    error_label = "TR"
 
     def __init__(
         self,
@@ -169,37 +170,24 @@ class TrafficScreen:
         client: httpx.Client | None = None,
         theme: Theme | None = None,
         *,
-        timezone: str = _DEFAULT_TZ,
+        timezone: str = DEFAULT_TZ,
     ) -> None:
+        super().__init__(client, timeout=20.0)
         self.route = route
         self.cfg = cfg
         self.theme = theme or theme_for("normal")
-        self.timezone = timezone or _DEFAULT_TZ
+        self.timezone = timezone or DEFAULT_TZ
         self.name = f"traffic:{route.name}"
-        self._client = client or httpx.Client(timeout=20.0)
-        self._owns_client = client is None
-        self._last: Image.Image | None = None
+        self.error_label = route.name[:8] or "TR"
 
-    def close(self) -> None:
-        if self._owns_client:
-            self._client.close()
-
-    def render(self) -> Image.Image:
-        try:
-            eta = _fetch_route(
-                self.route,
-                self.cfg.api_key,
-                self._client,
-                timezone=self.timezone,
-            )
-            img = self._paint(eta)
-            self._last = img.copy()
-            return img
-        except Exception:
-            logger.exception("Traffic fetch failed for %s", self.route.name)
-            if self._last is not None:
-                return self._last
-            return error_frame(self.route.name[:8] or "TR")
+    def _render(self) -> Image.Image:
+        eta = _fetch_route(
+            self.route,
+            self.cfg.api_key,
+            self._client,
+            timezone=self.timezone,
+        )
+        return self._paint(eta)
 
     def _paint(self, eta: RouteEta) -> Image.Image:
         t = self.theme

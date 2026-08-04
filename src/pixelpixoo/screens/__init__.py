@@ -6,6 +6,10 @@ from typing import Protocol
 
 from PIL import Image
 
+from pixelpixoo.screens.base import BaseScreen
+
+__all__ = ["BaseScreen", "Screen"]
+
 
 class Screen(Protocol):
     name: str

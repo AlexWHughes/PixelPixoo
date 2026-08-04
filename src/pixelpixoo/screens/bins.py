@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from pixelpixoo.schedule import DAY_ALIASES
+from pixelpixoo.schedule import DAY_ALIASES, DEFAULT_TZ, WEEKDAYS_SHORT
 
-WEEKDAYS_SHORT = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 LABEL_MAX = 12
 
 
@@ -17,6 +16,7 @@ class BinDue:
     label: str
     put_out: date
     days_until: int  # 0 = tonight, 1 = tomorrow, …
+    color: str = ""  # optional #rrggbb; empty = urgency colour on paint
 
 
 def parse_weekday(value: object) -> int | None:
@@ -76,6 +76,7 @@ def next_due_for_stream(
     anchor: date | None = None,
     eve_before: bool = True,
     horizon_days: int = 14,
+    color: str = "",
 ) -> BinDue | None:
     """Return the next put-out day for a stream within horizon_days, or None."""
     out_wd = put_out_weekday(collection_weekday, eve_before=eve_before)
@@ -103,12 +104,13 @@ def next_due_for_stream(
             label=label[:LABEL_MAX],
             put_out=candidate,
             days_until=(candidate - today).days,
+            color=color,
         )
     return None
 
 
 def upcoming_dues(
-    streams: list[tuple[str, int, int, date | None]],
+    streams: list[tuple[str, int, int, date | None, str]],
     today: date,
     *,
     eve_before: bool = True,
@@ -116,11 +118,11 @@ def upcoming_dues(
     horizon_days: int | None = None,
 ) -> list[BinDue]:
     """
-    streams: (label, collection_weekday, every_weeks, anchor_collection_date)
+    streams: (label, collection_weekday, every_weeks, anchor_collection_date, color)
     """
     limit = lead_days if horizon_days is None else horizon_days
     dues: list[BinDue] = []
-    for label, weekday, every_weeks, anchor in streams:
+    for label, weekday, every_weeks, anchor, color in streams:
         due = next_due_for_stream(
             label=label,
             collection_weekday=weekday,
@@ -129,6 +131,7 @@ def upcoming_dues(
             anchor=anchor,
             eve_before=eve_before,
             horizon_days=max(limit, 14),
+            color=color,
         )
         if due is not None and due.days_until <= limit:
             dues.append(due)
@@ -189,7 +192,7 @@ def local_today(timezone: str) -> date:
     try:
         tz = ZoneInfo(timezone)
     except Exception:
-        tz = ZoneInfo("Australia/Sydney")
+        tz = ZoneInfo(DEFAULT_TZ)
     return datetime.now(tz).date()
 
 
