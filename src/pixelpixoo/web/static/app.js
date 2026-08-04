@@ -89,14 +89,32 @@ function fromDatetimeLocal(value) {
   );
 }
 
+function setFieldValue(input, val) {
+  const v = val ?? "";
+  input.value = v;
+  // <input type="color"> keeps its content-attribute as the reset/default
+  // value. Setting only .value leaves value="#ff8c28" from the template, so a
+  // form reset / bfcache restore wipes custom bin colours.
+  if (input.type === "color") {
+    const hex = /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : "";
+    if (hex) {
+      input.value = hex;
+      input.defaultValue = hex;
+      input.setAttribute("value", hex);
+    }
+  }
+}
+
 function addFromTemplate(tplId, listId, values = {}) {
   const node = $(tplId).content.firstElementChild.cloneNode(true);
+  $(listId).appendChild(node);
   for (const [key, val] of Object.entries(values)) {
     const input = node.querySelector(`[data-f="${key}"]`);
-    if (input) input.value = val ?? "";
+    if (input) setFieldValue(input, val);
   }
+  const colorInput = node.querySelector('input[type="color"][data-f]');
+  colorInput?.addEventListener("input", () => setFieldValue(colorInput, colorInput.value));
   node.querySelector("[data-remove]")?.addEventListener("click", () => node.remove());
-  $(listId).appendChild(node);
   return node;
 }
 
