@@ -87,6 +87,8 @@ def paint_tile(
     kind, _, ref = tile.partition(":")
     kind = kind.strip().lower()
     ref = ref.strip()
+    if not feature_is_on(kind, cfg):
+        return
 
     try:
         if kind == "weather":
@@ -108,9 +110,28 @@ def paint_tile(
         _line(img, rect, theme, "ERR", RED, 0)
 
 
+def feature_is_on(kind: str, cfg: AppConfig) -> bool:
+    """True when the integration is enabled (not merely listed as a tile)."""
+    if kind == "weather":
+        return cfg.weather is not None
+    if kind == "traffic":
+        return cfg.traffic is not None
+    if kind == "sensibo":
+        return cfg.sensibo is not None
+    if kind == "f1":
+        return bool(cfg.enable_f1 and cfg.f1.enabled)
+    if kind == "countdown":
+        return bool(cfg.enable_countdown)
+    if kind == "bins":
+        return bool(cfg.bins is not None and cfg.bins.enabled)
+    return True
+
+
 def tile_is_visible(tile: str, cfg: AppConfig) -> bool:
     """Conditional tiles return False when they should leave the layout."""
     kind = tile.partition(":")[0].strip().lower()
+    if not feature_is_on(kind, cfg):
+        return False
     if kind == "bins":
         return bins_are_due(cfg)
     return True
@@ -127,6 +148,7 @@ def visible_tiles(cfg: AppConfig, tiles: list[str]) -> list[str]:
     bins win while due, otherwise F1. That avoids a blank reserved bins row and
     keeps the remaining layout taller / more readable.
     """
+    tiles = [t for t in tiles if feature_is_on(_tile_kind(t), cfg)]
     has_bins = any(_tile_kind(t) == "bins" for t in tiles)
     has_f1 = any(_tile_kind(t) == "f1" for t in tiles)
     if not (has_bins and has_f1):
@@ -512,8 +534,8 @@ def default_tiles(cfg: AppConfig) -> list[str]:
         tiles.append("traffic")
     if cfg.sensibo:
         tiles.append("sensibo")
-    if cfg.enable_f1:
+    if cfg.enable_f1 and cfg.f1.enabled:
         tiles.append("f1")
-    if cfg.countdown:
+    if cfg.enable_countdown and cfg.countdown:
         tiles.append("countdown")
     return visible_tiles(cfg, tiles)

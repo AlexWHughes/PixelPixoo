@@ -16,9 +16,14 @@ import httpx
 from PIL import Image
 
 from pixelpixoo.config import AppConfig, load_config, resolve_app_timezone
-from pixelpixoo.pixoo_client import PixooClient
+from pixelpixoo.pixoo_client import (
+    PixooClient,
+    discover_lan_devices,
+    require_lan_ipv4,
+    summarize_conf,
+)
+from pixelpixoo.presence import evaluate_display
 from pixelpixoo.renderer import error_frame
-from pixelpixoo.schedule import is_schedule_active
 from pixelpixoo.screens.composite import build_view_screens
 from pixelpixoo.screens.countdown import CountdownScreen
 from pixelpixoo.screens.f1 import F1Screen
@@ -28,6 +33,10 @@ from pixelpixoo.screens.weather import WeatherScreen
 from pixelpixoo.theme import theme_for
 
 logger = logging.getLogger(__name__)
+
+
+def _pixoo_client(cfg: AppConfig, *, timeout: float = 10.0) -> PixooClient:
+    return PixooClient(require_lan_ipv4(cfg.pixoo_ip), timeout=timeout)
 
 
 def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
@@ -61,8 +70,9 @@ def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
         screens.extend(build_sensibo_screens(cfg.sensibo, http, theme=theme))
     if cfg.enable_f1 and cfg.f1.enabled:
         screens.append(F1Screen(client=http, theme=theme, cfg=cfg.f1))
-    for target in cfg.countdown:
-        screens.append(CountdownScreen(target, theme=theme))
+    if cfg.enable_countdown:
+        for target in cfg.countdown:
+            screens.append(CountdownScreen(target, theme=theme))
     return screens
 
 
@@ -85,6 +95,7 @@ class RuntimeStatus:
     reloads: int = 0
     schedule_active: bool = True
     schedule_enabled: bool = False
+    schedule_reason: str = "on"
 
 
 class PixelRuntime:
@@ -159,6 +170,7 @@ class PixelRuntime:
             "reloads": s.reloads,
             "schedule_active": s.schedule_active,
             "schedule_enabled": s.schedule_enabled,
+            "schedule_reason": s.schedule_reason,
         }
 
     def render_screen_png(self, name: str, *, scale: int = 8) -> bytes:
@@ -196,16 +208,49 @@ class PixelRuntime:
         with self._lock:
             return self._last_frames.get(name)
 
-    def test_pixoo(self) -> dict[str, Any]:
+    def test_pixoo(self, ip: str | None = None) -> dict[str, Any]:
         cfg = self._cfg or load_config()
-        client = PixooClient(cfg.pixoo_ip, timeout=5.0)
+        raw = (ip if ip is not None else cfg.pixoo_ip).strip()
         try:
-            client.send("Channel/GetIndex")
-            return {"ok": True, "ip": cfg.pixoo_ip, "message": "Pixoo responded"}
+            target = require_lan_ipv4(raw)
+        except ValueError as exc:
+            return {"ok": False, "ip": raw, "message": str(exc)}
+        client = PixooClient(target, timeout=5.0)
+        try:
+            conf = client.get_all_conf()
+            pic_id = None
+            try:
+                pic_id = client.get_http_gif_id()
+            except Exception:
+                logger.debug("GetHttpGifId unavailable during test", exc_info=True)
+            return {
+                "ok": True,
+                "ip": target,
+                "message": summarize_conf(conf, ip=target, pic_id=pic_id),
+                "conf": {
+                    "brightness": conf.get("Brightness"),
+                    "light_switch": conf.get("LightSwitch"),
+                    "rotation": conf.get("RotationFlag"),
+                    "pic_id": pic_id,
+                },
+            }
         except Exception as exc:
-            return {"ok": False, "ip": cfg.pixoo_ip, "message": str(exc)}
+            return {"ok": False, "ip": target, "message": str(exc)}
         finally:
             client.close()
+
+    def discover_pixoo(self) -> dict[str, Any]:
+        try:
+            devices = discover_lan_devices()
+        except Exception as exc:
+            return {"ok": False, "devices": [], "message": str(exc)}
+        if not devices:
+            return {
+                "ok": True,
+                "devices": [],
+                "message": "No Pixoo devices found on this public IP",
+            }
+        return {"ok": True, "devices": devices, "message": f"Found {len(devices)}"}
 
     def _update_status(self, **kwargs: Any) -> None:
         with self._lock:
@@ -231,21 +276,28 @@ class PixelRuntime:
                     preview_dir = self._preview_dir
                     once = self._once
 
-                active = is_schedule_active(cfg.schedule)
+                decision = evaluate_display(cfg, http)
                 self._update_status(
-                    schedule_active=active,
-                    schedule_enabled=cfg.schedule.enabled,
+                    schedule_active=decision.active,
+                    schedule_enabled=cfg.schedule.enabled
+                    or cfg.schedule.follow_sun
+                    or cfg.schedule.follow_sensibo,
+                    schedule_reason=decision.reason,
                 )
-                if cfg.schedule.enabled and not active:
-                    self._update_status(current_screen="(scheduled off)")
+                if not decision.active:
+                    self._update_status(current_screen=f"({decision.reason})")
                     if preview_dir is None:
                         if pixoo is None:
-                            pixoo = PixooClient(cfg.pixoo_ip)
-                        if not screen_was_off and cfg.schedule.outside == "off":
+                            try:
+                                pixoo = _pixoo_client(cfg)
+                            except ValueError as exc:
+                                logger.error("Invalid Pixoo IP: %s", exc)
+                                self._update_status(last_error=str(exc))
+                        if pixoo is not None and not screen_was_off and cfg.schedule.outside == "off":
                             try:
                                 pixoo.set_screen(False)
                                 screen_was_off = True
-                                logger.info("Schedule inactive — Pixoo screen off")
+                                logger.info("Display inactive (%s) — Pixoo screen off", decision.reason)
                             except Exception:
                                 logger.exception("Failed to turn Pixoo screen off")
                     self._interruptible_sleep(min(60.0, max(15.0, cfg.rotate_seconds)))
@@ -255,7 +307,7 @@ class PixelRuntime:
                     try:
                         pixoo.bootstrap(cfg.brightness)
                         screen_was_off = False
-                        logger.info("Schedule active — Pixoo screen on")
+                        logger.info("Display active (%s) — Pixoo screen on", decision.reason)
                     except Exception:
                         logger.exception("Failed to restore Pixoo after schedule")
 
@@ -297,8 +349,8 @@ class PixelRuntime:
                         continue
 
                     if preview_dir is None:
-                        pixoo = PixooClient(cfg.pixoo_ip)
                         try:
+                            pixoo = _pixoo_client(cfg)
                             pixoo.bootstrap(cfg.brightness)
                         except Exception as exc:
                             logger.exception("Pixoo bootstrap failed")

@@ -10,7 +10,7 @@ import httpx
 from PIL import Image
 
 from pixelpixoo.cache import TtlCache
-from pixelpixoo.config import LABEL_MAX, SensiboConfig
+from pixelpixoo.config import LABEL_MAX, AppConfig, SensiboConfig
 from pixelpixoo.renderer import (
     BLACK,
     BLUE,
@@ -48,6 +48,7 @@ class SensiboSnapshot:
     ac_on: bool | None
     mode: str | None
     target_c: int | None
+    occupancy: str | None = None  # occupied | vacant
 
 
 _snapshot_cache: TtlCache[SensiboSnapshot] = TtlCache()
@@ -135,30 +136,33 @@ def _list_pods(api_key: str, client: httpx.Client) -> list[dict]:
     return result
 
 
+def _measurement_dict(raw: object) -> dict | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict):
+        return raw[0]
+    return None
+
+
 def _parse_pod(raw: dict) -> SensiboSnapshot:
     pod_id = str(raw.get("id") or raw.get("uid") or "")
     room_obj = raw.get("room") or {}
     room = str(room_obj.get("name") or "ROOM")
 
-    measurements = raw.get("measurements")
+    measurements = _measurement_dict(raw.get("measurements"))
     temperature: float | None = None
     humidity: float | None = None
-    if isinstance(measurements, dict):
+    if measurements:
         if measurements.get("temperature") is not None:
             temperature = float(measurements["temperature"])
         if measurements.get("humidity") is not None:
             humidity = float(measurements["humidity"])
-    elif isinstance(measurements, list) and measurements:
-        first = measurements[0]
-        if first.get("temperature") is not None:
-            temperature = float(first["temperature"])
-        if first.get("humidity") is not None:
-            humidity = float(first["humidity"])
 
     ac = raw.get("acState") or {}
     ac_on = bool(ac["on"]) if "on" in ac else None
     mode = str(ac["mode"]).upper() if ac.get("mode") else None
     target = int(ac["targetTemperature"]) if ac.get("targetTemperature") is not None else None
+    occupancy = _parse_occupancy(measurements)
 
     return SensiboSnapshot(
         pod_id=pod_id,
@@ -168,7 +172,66 @@ def _parse_pod(raw: dict) -> SensiboSnapshot:
         ac_on=ac_on,
         mode=mode,
         target_c=target,
+        occupancy=occupancy,
     )
+
+
+def _parse_occupancy(measurements: dict | None) -> str | None:
+    if not measurements:
+        return None
+    raw = measurements.get("occupancy")
+    if raw is None:
+        raw = measurements.get("roomOccupancy")
+    if isinstance(raw, dict):
+        raw = raw.get("status") or raw.get("type") or raw.get("state")
+    if isinstance(raw, bool):
+        return "occupied" if raw else "vacant"
+    if raw is None and "motion" in measurements:
+        return "occupied" if bool(measurements.get("motion")) else "vacant"
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if text in ("occupied", "present", "true", "1"):
+        return "occupied"
+    if text in ("vacant", "unoccupied", "empty", "away", "false", "0"):
+        return "vacant"
+    return None
+
+
+def climate_suggests_home(cfg: AppConfig, client: httpx.Client) -> bool | None:
+    """True if someone seems home (occupancy or any AC on). None if unknown."""
+    if cfg.sensibo is None:
+        logger.warning("follow_sensibo is on but Sensibo is not configured; ignoring")
+        return None
+    try:
+        pods = _list_pods(cfg.sensibo.api_key, client)
+    except Exception:
+        logger.exception("Sensibo presence check failed")
+        return None
+    snaps = [s for s in (_parse_pod(p) for p in pods) if s.pod_id]
+    if cfg.sensibo.devices:
+        wanted = {d.pod_id for d in cfg.sensibo.devices if d.pod_id}
+        rooms = {d.room.lower() for d in cfg.sensibo.devices if d.room}
+        labels = {d.label.lower() for d in cfg.sensibo.devices if d.label}
+        if wanted or rooms or labels:
+            snaps = [
+                s
+                for s in snaps
+                if s.pod_id in wanted
+                or s.room.lower() in rooms
+                or _short_room(s.room).lower() in labels
+            ]
+    if not snaps:
+        return None
+    occupied = [s.occupancy for s in snaps if s.occupancy]
+    if occupied and any(flag == "occupied" for flag in occupied):
+        return True
+    ons = [s.ac_on for s in snaps if s.ac_on is not None]
+    if ons:
+        return any(ons)
+    if occupied:
+        return False
+    return None
 
 
 def resolve_devices(cfg: SensiboConfig, client: httpx.Client) -> list[tuple[str, str]]:

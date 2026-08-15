@@ -22,3 +22,4 @@ credentials.json
 preview/
 *.png
 !docs/**/*.png
+!docs/**/*.jpg

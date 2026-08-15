@@ -179,11 +179,38 @@ function labelForTile(id) {
   return tileOptions.find((o) => o.id === id)?.label || id;
 }
 
+function tileKind(id) {
+  return String(id).split(":")[0];
+}
+
+function isFeatureOn(kind) {
+  switch (kind) {
+    case "weather":
+      return !!form.weather_enabled?.checked;
+    case "traffic":
+      return !!form.traffic_enabled?.checked;
+    case "sensibo":
+      return !!form.sensibo_enabled?.checked;
+    case "f1":
+      return !!form.enable_f1?.checked;
+    case "countdown":
+      return !!form.countdown_enabled?.checked;
+    case "bins":
+      return !!form.bins_enabled?.checked;
+    default:
+      return true;
+  }
+}
+
+function pickerTileOptions() {
+  return tileOptions.filter((o) => isFeatureOn(tileKind(o.id)));
+}
+
 /** Shared checkbox-chip tile picker. Mutates `order` in place. */
 function mountTileChips(box, order, onChange) {
   box.innerHTML = "";
   const set = new Set(order);
-  for (const opt of tileOptions) {
+  for (const opt of pickerTileOptions()) {
     const lab = document.createElement("label");
     lab.className = "chip tile-chip";
     const input = document.createElement("input");
@@ -215,18 +242,23 @@ function renderTilePicker() {
 function renderTileOrder() {
   const list = $("#tileOrder");
   list.innerHTML = "";
-  selectedTiles.forEach((id, idx) => {
+  const shown = selectedTiles.filter((id) => isFeatureOn(tileKind(id)));
+  shown.forEach((id, idx) => {
     const li = document.createElement("li");
     li.innerHTML = `<code>${escapeHtml(id)}</code> <span>${escapeHtml(labelForTile(id))}</span>`;
+    const pos = selectedTiles.indexOf(id);
     const up = document.createElement("button");
     up.type = "button";
     up.className = "btn tiny";
     up.textContent = "↑";
     up.disabled = idx === 0;
     up.addEventListener("click", () => {
-      [selectedTiles[idx - 1], selectedTiles[idx]] = [
-        selectedTiles[idx],
-        selectedTiles[idx - 1],
+      if (idx <= 0) return;
+      const otherPos = selectedTiles.indexOf(shown[idx - 1]);
+      if (pos < 0 || otherPos < 0) return;
+      [selectedTiles[otherPos], selectedTiles[pos]] = [
+        selectedTiles[pos],
+        selectedTiles[otherPos],
       ];
       renderTilePicker();
     });
@@ -234,11 +266,14 @@ function renderTileOrder() {
     down.type = "button";
     down.className = "btn tiny";
     down.textContent = "↓";
-    down.disabled = idx === selectedTiles.length - 1;
+    down.disabled = idx === shown.length - 1;
     down.addEventListener("click", () => {
-      [selectedTiles[idx], selectedTiles[idx + 1]] = [
-        selectedTiles[idx + 1],
-        selectedTiles[idx],
+      if (idx >= shown.length - 1) return;
+      const otherPos = selectedTiles.indexOf(shown[idx + 1]);
+      if (pos < 0 || otherPos < 0) return;
+      [selectedTiles[otherPos], selectedTiles[pos]] = [
+        selectedTiles[pos],
+        selectedTiles[otherPos],
       ];
       renderTilePicker();
     });
@@ -246,7 +281,7 @@ function renderTileOrder() {
     li.appendChild(down);
     list.appendChild(li);
   });
-  if (!selectedTiles.length) {
+  if (!shown.length) {
     list.innerHTML = `<li class="muted">Auto (enabled screens)</li>`;
   }
 }
@@ -323,7 +358,7 @@ function fillConfig(cfg) {
   form.rotate_seconds.value = cfg.rotate_seconds ?? 18;
   form.preview_mode.checked = !!cfg.preview_mode;
   form.preview_dir.value = cfg.preview_dir || "/preview";
-  form.enable_f1.checked = !!cfg.enable_f1;
+  form.enable_f1.checked = cfg.f1?.enabled !== false && !!cfg.enable_f1;
 
   const scale = cfg.display?.text_scale || "normal";
   const layout = cfg.display?.layout || "focus";
@@ -346,7 +381,6 @@ function fillConfig(cfg) {
   if (layout === "custom" && !rowPattern.length) {
     rowPattern = [1, 1, 1, 2];
   }
-  renderTilePicker();
   renderRowPattern();
   syncLayoutPanels();
 
@@ -394,6 +428,10 @@ function fillConfig(cfg) {
   form.schedule_enabled.checked = !!cfg.schedule?.enabled;
   form.schedule_timezone.value = cfg.schedule?.timezone || DEFAULT_TZ;
   form.schedule_outside.value = cfg.schedule?.outside || "off";
+  form.follow_sun.checked = !!cfg.schedule?.follow_sun;
+  form.follow_sensibo.checked = !!cfg.schedule?.follow_sensibo;
+  form.sun_pad_minutes.value = cfg.schedule?.sun_pad_minutes ?? 20;
+  bindRange("sun_pad_minutes", "#sunPadVal");
   $("#scheduleList").innerHTML = "";
   for (const win of cfg.schedule?.windows || []) {
     addWindowRow(win);
@@ -420,6 +458,7 @@ function fillConfig(cfg) {
   for (const item of cfg.countdown || []) {
     addCountdownRow(item);
   }
+  form.countdown_enabled.checked = cfg.enable_countdown !== false;
 
   form.bins_enabled.checked = !!cfg.bins?.enabled;
   form.bins_timezone.value = cfg.bins?.timezone || DEFAULT_TZ;
@@ -436,11 +475,37 @@ function fillConfig(cfg) {
   toggleSections();
 }
 
+function setFeaturePanel(sectionId, on) {
+  const panel = $(sectionId);
+  if (!panel) return;
+  panel.classList.toggle("is-off", !on);
+  const body = panel.querySelector("fieldset.feature-body");
+  if (body) body.disabled = !on;
+}
+
+function refreshTilePickers() {
+  renderTilePicker();
+  $$("#viewsList .view-row").forEach((row) => {
+    const box = row.querySelector('[data-role="view-tiles"]');
+    let selected = [];
+    try {
+      selected = JSON.parse(box?.dataset.tiles || "[]");
+    } catch {
+      selected = [];
+    }
+    mountViewTilePicker(row, selected);
+  });
+}
+
 function toggleSections() {
-  $(".weather-fields").style.opacity = form.weather_enabled.checked ? "1" : "0.45";
-  $("#routesList").style.opacity = form.traffic_enabled.checked ? "1" : "0.45";
-  $("#sensiboList").style.opacity = form.sensibo_enabled.checked ? "1" : "0.45";
-  $("#binsList").style.opacity = form.bins_enabled.checked ? "1" : "0.45";
+  setFeaturePanel("#sec-weather", form.weather_enabled.checked);
+  setFeaturePanel("#sec-traffic", form.traffic_enabled.checked);
+  setFeaturePanel("#sec-sensibo", form.sensibo_enabled.checked);
+  setFeaturePanel("#sec-f1", form.enable_f1.checked);
+  setFeaturePanel("#sec-countdown", form.countdown_enabled.checked);
+  setFeaturePanel("#sec-bins", form.bins_enabled.checked);
+  setFeaturePanel("#sec-schedule", form.schedule_enabled.checked);
+  refreshTilePickers();
 }
 
 function collectPayload() {
@@ -454,6 +519,7 @@ function collectPayload() {
     preview_mode: form.preview_mode.checked,
     preview_dir: form.preview_dir.value.trim() || "/preview",
     enable_f1: form.enable_f1.checked,
+    enable_countdown: form.countdown_enabled.checked,
     f1: {
       enabled: form.enable_f1.checked,
       mode: form.f1_mode.value,
@@ -514,6 +580,9 @@ function collectPayload() {
       enabled: form.schedule_enabled.checked,
       timezone: form.schedule_timezone.value.trim() || DEFAULT_TZ,
       outside: form.schedule_outside.value,
+      follow_sun: form.follow_sun.checked,
+      sun_pad_minutes: Number(form.sun_pad_minutes.value),
+      follow_sensibo: form.follow_sensibo.checked,
       windows: readWindows(),
     },
   };
@@ -588,8 +657,8 @@ async function refreshStatus() {
     ? "Preview (PNG)"
     : s.schedule_enabled
       ? s.schedule_active
-        ? "Live · in window"
-        : "Scheduled off"
+        ? `Live · ${s.schedule_reason || "in window"}`
+        : s.schedule_reason || "Scheduled off"
       : "Push to device";
   $("#statCount").textContent = `${s.screen_count ?? 0}`;
   $("#statRotate").textContent = `${s.rotate_seconds ?? "—"}s`;
@@ -707,14 +776,68 @@ async function testPixoo() {
   note.textContent = "Testing…";
   note.className = "inline-note";
   try {
-    const payload = collectPayload();
-    await api("/api/config", { method: "PUT", body: JSON.stringify(payload) });
-    const result = await api("/api/pixoo/test", { method: "POST", body: "{}" });
+    const ip = form.pixoo_ip.value.trim();
+    const result = await api("/api/pixoo/test", {
+      method: "POST",
+      body: JSON.stringify({ ip }),
+    });
     note.textContent = result.message;
     note.className = `inline-note ${result.ok ? "ok" : "bad"}`;
   } catch (err) {
     note.textContent = err.message || String(err);
     note.className = "inline-note bad";
+  }
+}
+
+async function discoverPixoo() {
+  const box = $("#pixooDiscover");
+  const note = $("#pixooTestNote");
+  const btnDiscoverPixoo = $("#btnDiscoverPixoo");
+  box.hidden = false;
+  box.textContent = "Looking for Pixoo devices on this LAN…";
+  note.textContent = "";
+  btnDiscoverPixoo.disabled = true;
+  try {
+    const data = await api("/api/pixoo/discover");
+    box.innerHTML = "";
+    if (!data.ok) {
+      box.textContent = data.message || "Discover failed.";
+      note.textContent = data.message || "Discover failed";
+      note.className = "inline-note bad";
+      return;
+    }
+    if (!data.devices?.length) {
+      box.textContent =
+        data.message ||
+        "None found. The lookup uses Divoom’s cloud (same public IP as this host).";
+      return;
+    }
+    for (const d of data.devices) {
+      const row = document.createElement("div");
+      row.className = "discover-item";
+      const label = document.createElement("span");
+      label.textContent = `${d.name} · ${d.ip}`;
+      const use = document.createElement("button");
+      use.type = "button";
+      use.className = "btn tiny";
+      use.textContent = "Use";
+      use.addEventListener("click", () => {
+        form.pixoo_ip.value = d.ip;
+        note.textContent = `Using ${d.name} (${d.ip}) — save to apply`;
+        note.className = "inline-note ok";
+      });
+      row.appendChild(label);
+      row.appendChild(use);
+      box.appendChild(row);
+    }
+    note.textContent = data.message;
+    note.className = "inline-note ok";
+  } catch (err) {
+    box.textContent = err.message || String(err);
+    note.textContent = err.message || String(err);
+    note.className = "inline-note bad";
+  } finally {
+    btnDiscoverPixoo.disabled = false;
   }
 }
 
@@ -932,12 +1055,16 @@ function wireUi() {
     }
   });
   $("#btnTestPixoo").addEventListener("click", testPixoo);
+  $("#btnDiscoverPixoo").addEventListener("click", discoverPixoo);
   $("#btnDiscoverSensibo").addEventListener("click", discoverSensibo);
   $("#btnRefreshPreviews").addEventListener("click", refreshStatus);
   form.weather_enabled.addEventListener("change", toggleSections);
   form.traffic_enabled.addEventListener("change", toggleSections);
   form.sensibo_enabled.addEventListener("change", toggleSections);
+  form.enable_f1.addEventListener("change", toggleSections);
+  form.countdown_enabled.addEventListener("change", toggleSections);
   form.bins_enabled.addEventListener("change", toggleSections);
+  form.schedule_enabled.addEventListener("change", toggleSections);
 }
 
 async function boot() {

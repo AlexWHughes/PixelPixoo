@@ -20,6 +20,7 @@ from pixelpixoo.persist import (
     normalize_import_payload,
     public_config_dict,
 )
+from pixelpixoo.pixoo_client import require_lan_ipv4
 from pixelpixoo.runtime import runtime
 from pixelpixoo.screens.sensibo import discover_pods
 
@@ -125,8 +126,21 @@ def reload_runtime() -> dict[str, Any]:
 
 
 @app.post("/api/pixoo/test")
-def test_pixoo() -> dict[str, Any]:
-    return runtime.test_pixoo()
+def test_pixoo(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    ip = ""
+    if isinstance(payload, dict):
+        ip = str(payload.get("ip") or "").strip()
+    if ip:
+        try:
+            ip = require_lan_ipv4(ip)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    return runtime.test_pixoo(ip or None)
+
+
+@app.get("/api/pixoo/discover")
+def discover_pixoo() -> dict[str, Any]:
+    return runtime.discover_pixoo()
 
 
 @app.get("/api/preview/{screen_name:path}")

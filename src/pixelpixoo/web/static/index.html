@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/app.css?v=4" />
+  <link rel="stylesheet" href="/static/app.css?v=6" />
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
@@ -46,7 +46,7 @@
           <div class="matrix-meta">
             <div><span class="k">now</span> <strong id="statCurrent">—</strong></div>
             <div><span class="k">last</span> <strong id="statLast">—</strong></div>
-            <div><span class="k">pushes</span> <strong id="statPushes">0</strong></div>
+            <div hidden><span class="k">pushes</span> <strong id="statPushes">0</strong></div>
             <div><span class="k">errors</span> <strong id="statErrors">0</strong></div>
           </div>
         </div>
@@ -72,12 +72,11 @@
         <section class="panel" id="sec-device">
           <div class="panel-head">
             <h2>Device</h2>
-            <p class="hint">LAN address the container can reach. Test before going live.</p>
           </div>
           <div class="fields three">
             <label>
               <span>Pixoo IP</span>
-              <input name="pixoo_ip" required pattern="^[-0-9A-Za-z.:]+$" placeholder="192.168.1.100" />
+              <input name="pixoo_ip" required pattern="^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$" placeholder="192.168.1.100" title="Dotted LAN IPv4 address" />
             </label>
             <label>
               <span>Brightness <em id="brightnessVal">80</em></span>
@@ -99,16 +98,18 @@
             </label>
           </div>
           <div class="row-actions">
+            <button type="button" class="btn ghost" id="btnDiscoverPixoo">Find on LAN</button>
             <button type="button" class="btn ghost" id="btnTestPixoo">Test Pixoo connection</button>
             <span class="inline-note" id="pixooTestNote"></span>
           </div>
+          <div id="pixooDiscover" class="discover" hidden></div>
         </section>
 
         <section class="panel" id="sec-display">
           <div class="panel-head">
             <h2>Display</h2>
-            <p class="hint">Text scale and frame layout. Use multi-tile layouts to pack several details on one 64×64 view.</p>
           </div>
+          <p class="hint">Text scale and frame layout. The tile list only includes features that are enabled below — turning a feature off stops its API calls and removes it from the loop.</p>
 
           <p class="field-label">Text scale</p>
           <div class="option-grid" id="textScaleOptions" role="radiogroup" aria-label="Text scale">
@@ -183,7 +184,7 @@
             </label>
           </div>
 
-          <p class="field-label">Tiles <small>tick to include · order = check order</small></p>
+          <p class="field-label">Tiles <small>enabled features only · tick to include · order = check order</small></p>
           <div id="tilePicker" class="tile-picker" role="group" aria-label="Tiles"></div>
           <div class="tile-order-bar">
             <span class="muted">Order:</span>
@@ -218,7 +219,8 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Open-Meteo — no API key. Current conditions plus optional multi-day forecast.</p>
+          <fieldset class="feature-body">
+          <p class="hint">Open-Meteo — no API key. Location is still used for sunrise/sunset if you turn the weather screen off.</p>
           <div class="fields four weather-fields">
             <label>
               <span>Label <small>≤16 chars</small></span>
@@ -259,6 +261,7 @@
             <option value="Pacific/Auckland"></option>
             <option value="UTC"></option>
           </datalist>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-traffic">
@@ -269,7 +272,8 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Google Directions with live traffic. One slide per route. Leave the key blank to keep the existing secret.</p>
+          <fieldset class="feature-body">
+          <p class="hint">Google Directions with live traffic. One slide per route. Leave the key blank to keep the existing secret. Off = no Google requests, even if routes are saved.</p>
           <div class="fields two">
             <label class="grow">
               <span>Google Maps API key <small id="googleHint"></small></span>
@@ -285,6 +289,7 @@
             <button type="button" class="btn tiny" id="btnAddRoute">Add route</button>
           </div>
           <div id="routesList" class="stack"></div>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-sensibo">
@@ -295,7 +300,8 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Indoor temp, humidity, and AC state via Sensibo API v2. Toggle which fields appear on the matrix.</p>
+          <fieldset class="feature-body">
+          <p class="hint">Indoor temp, humidity, and AC state via Sensibo API v2. Off = no Sensibo requests. Pinned devices and the API key are kept.</p>
           <div class="fields two">
             <label class="grow">
               <span>Sensibo API key <small id="sensiboHint"></small></span>
@@ -327,6 +333,7 @@
             <button type="button" class="btn tiny" id="btnAddSensibo">Add pin</button>
           </div>
           <div id="sensiboList" class="stack"></div>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-f1">
@@ -337,6 +344,7 @@
               <span>Enabled</span>
             </label>
           </div>
+          <fieldset class="feature-body">
           <p class="hint">Jolpica weekend sessions — practice, sprint (when present), quali, and race with countdown + local date/time.</p>
           <div class="fields two">
             <label>
@@ -363,6 +371,7 @@
             <label class="chip"><input type="checkbox" name="f1_sess_quali" value="quali" checked /><span>Qualifying</span></label>
             <label class="chip"><input type="checkbox" name="f1_sess_race" value="race" checked /><span>Race</span></label>
           </div>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-schedule">
@@ -373,7 +382,8 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Only show the dashboard during these windows. Outside hours the Pixoo screen turns off (or pauses).</p>
+          <fieldset class="feature-body">
+          <p class="hint">Only show the dashboard during these windows. Outside hours the Pixoo screen turns off (or pauses). Daylight and Sensibo are extra AND checks — the Pixoo 64 does not expose a light or occupancy sensor of its own.</p>
           <div class="fields three">
             <label>
               <span>Timezone</span>
@@ -386,33 +396,61 @@
                 <option value="pause">Pause pushes (leave last frame)</option>
               </select>
             </label>
-            <div class="row-actions" style="align-items:end">
-              <button type="button" class="btn tiny" id="btnAddWindow">Add window</button>
-            </div>
+            <label>
+              <span>Daylight pad (min) <em id="sunPadVal">20</em></span>
+              <input name="sun_pad_minutes" type="range" min="0" max="180" value="20" />
+            </label>
+          </div>
+          <div class="fields two">
+            <label class="check">
+              <input type="checkbox" name="follow_sun" />
+              <span>Follow sunrise / sunset <small>needs weather lat/lon — off from dusk to dawn</small></span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="follow_sensibo" />
+              <span>Follow Sensibo <small>off when rooms look vacant (occupancy, else all ACs off)</small></span>
+            </label>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn tiny" id="btnAddWindow">Add window</button>
           </div>
           <div id="scheduleList" class="stack"></div>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-countdown">
           <div class="panel-head">
             <h2>Countdowns</h2>
+            <label class="switch">
+              <input type="checkbox" name="countdown_enabled" checked />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <fieldset class="feature-body">
+          <div class="list-head">
+            <h3>Dates</h3>
             <button type="button" class="btn tiny" id="btnAddCountdown">Add date</button>
           </div>
-          <p class="hint">Pick a date and time — saved with your local timezone offset.</p>
+          <p class="hint">Pick a date and time — saved with your local timezone offset. Off keeps the dates but skips the countdown screen.</p>
           <div id="countdownList" class="stack"></div>
+          </fieldset>
         </section>
 
         <section class="panel" id="sec-bins">
           <div class="panel-head">
             <h2>Bin night</h2>
+            <label class="switch">
+              <input type="checkbox" name="bins_enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <fieldset class="feature-body">
+          <div class="list-head">
+            <h3>Streams</h3>
             <button type="button" class="btn tiny" id="btnAddBin">Add stream</button>
           </div>
-          <p class="hint">Weekly / fortnightly kerbside schedule. When both <em>bins</em> and <em>f1</em> are in the tile list they share one slot — bins while due, F1 otherwise (no blank reserved row). Collection day is morning pickup; with “eve before” (default) the Pixoo says TONIGHT on the evening you put bins out.</p>
-          <div class="fields three">
-            <label class="check">
-              <input type="checkbox" name="bins_enabled" />
-              <span>Enable bin night</span>
-            </label>
+          <p class="hint">Weekly or fortnightly. Shares a tile with F1 when both are on — bins when due, F1 otherwise. Morning collection; “eve before” shows TONIGHT the night you put bins out.</p>
+          <div class="fields two">
             <label>
               <span>Timezone</span>
               <input name="bins_timezone" placeholder="Australia/Sydney" list="tzlist" />
@@ -427,11 +465,11 @@
             <span>Put bins out the evening before collection <small>Australian bin night</small></span>
           </label>
           <div id="binsList" class="stack"></div>
+          </fieldset>
         </section>
 
         <footer class="form-foot">
           <button type="submit" class="btn primary wide">Save &amp; apply</button>
-          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads. <strong>Backup</strong> saves the live UI then downloads the full config (display, views, screens, secrets). <strong>Restore</strong> applies that backup.</p>
         </footer>
       </form>
     </div>
@@ -547,6 +585,6 @@
     </div>
   </template>
 
-  <script src="/static/app.js?v=4" type="module"></script>
+  <script src="/static/app.js?v=7" type="module"></script>
 </body>
 </html>
