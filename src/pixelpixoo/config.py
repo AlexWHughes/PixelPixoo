@@ -154,6 +154,8 @@ class AppConfig:
     display: DisplayConfig = field(default_factory=DisplayConfig)
     views: list[ViewConfig] = field(default_factory=list)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+    # lat, lon, tz from weather.yaml even if the weather tile is disabled
+    location: tuple[float, float, str] | None = None
 
 
 def resolve_app_timezone(cfg: AppConfig, *, default: str = DEFAULT_TZ) -> str:
@@ -425,6 +427,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raw.get("schedule") if isinstance(raw.get("schedule"), dict) else None
     )
 
+    location: tuple[float, float, str] | None = None
+    weather_raw = raw.get("weather")
+    if isinstance(weather_raw, dict):
+        try:
+            location = (
+                float(weather_raw["latitude"]),
+                float(weather_raw["longitude"]),
+                str(weather_raw.get("timezone") or schedule.timezone or DEFAULT_TZ),
+            )
+        except (KeyError, TypeError, ValueError):
+            location = None
+    if weather is not None:
+        location = (weather.latitude, weather.longitude, weather.timezone)
+
     return AppConfig(
         pixoo_ip=pixoo_ip,
         rotate_seconds=max(15.0, rotate_seconds),
@@ -439,4 +455,5 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         display=display,
         views=views,
         schedule=schedule,
+        location=location,
     )

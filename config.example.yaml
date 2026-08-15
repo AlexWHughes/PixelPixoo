@@ -81,6 +81,9 @@ schedule:
   enabled: false
   timezone: "Australia/Sydney"
   outside: off         # off = turn screen off; pause = leave last frame
+  follow_sun: false    # off from dusk to dawn (uses weather lat/lon)
+  sun_pad_minutes: 20  # keep on this long after sunset / before sunrise
+  follow_sensibo: false  # off when rooms look vacant (occupancy, else all ACs off)
   windows:
     - days: [mon, tue, wed, thu, fri]
       start: "07:00"

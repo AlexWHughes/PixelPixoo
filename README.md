@@ -24,7 +24,7 @@ Also included:
 - Custom multi-tile layouts on a single 64×64 frame (`row_pattern`, tile picker)
 - Tiny / compact / normal text scales for dense dashboards
 - Crossfade between frames, brightness + rotate interval
-- Optional on/off schedule (timezone-aware windows)
+- Optional on/off schedule (timezone-aware windows, sunrise/sunset, Sensibo presence)
 - Config web UI with live previews, secret masking, export/import
 - Docker + Portainer-friendly deploy (named volumes; no secrets in git)
 
@@ -126,16 +126,15 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 | POST | `/api/config/export` | Build backup from a live UI form body (no disk write) |
 | POST | `/api/config/import` | Restore full config from backup JSON |
 | POST | `/api/reload` | Reload push loop |
-| POST | `/api/pixoo/test` | Ping device |
+| POST | `/api/pixoo/test` | Ping device (`Channel/GetAllConf`; optional `{ "ip": "..." }`) |
+| GET | `/api/pixoo/discover` | LAN devices via Divoom same-LAN lookup |
 | GET | `/api/sensibo/discover` | List pods |
 | GET | `/api/preview/{name}` | PNG frame |
 
 ## Security notes
-
-- Never commit `.env` or `config.yaml` — they are gitignored for a reason.
 - Export JSON contains **raw API keys**. Store backups privately.
 - The web UI has **no authentication**. Bind it to a trusted LAN/VPN only (or put it behind a reverse proxy with auth).
-- Rotate Google / Sensibo keys if they were ever pushed to a remote or shared in an export.
+
 
 ## Development
 
@@ -145,8 +144,33 @@ pip install -r requirements.txt
 PYTHONPATH=src python -m pixelpixoo
 ```
 
-Package layout lives under `src/pixelpixoo/`. License: [MIT](LICENSE).
+Package layout lives under `src/pixelpixoo/`.
+
+## Contributing
+
+Issues and pull requests are welcome. Please keep secrets (`PIXOO_IP`, API keys, `config.yaml`, `.env`) out of git, and match the existing style where you can.
+
+## Credits
+
+PixelPixoo is maintained by [Alex Hughes](https://github.com/AlexWHughes) and [contributors](https://github.com/AlexWHughes/PixelPixoo/graphs/contributors). Licensed under [MIT](LICENSE).
+
+Device protocol:
+
+- [Divoom HTTP API](http://doc.divoom-gz.com/web/#/12?page_id=196) — `POST /post` command names used to push frames, set brightness, and read `Channel/GetAllConf`
+- [SomethingWithComputers/pixoo](https://github.com/SomethingWithComputers/pixoo) (CC BY-NC-SA 4.0) — GIF PicID sync (`Draw/GetHttpGifId`), resetting `Draw/ResetHttpGifId` every ~32 frames so firmware does not hang, and same-LAN discovery via `Device/ReturnSameLANDevice`. PixelPixoo reimplements those details and does not vendor or copy that library.
+- [Grayda/pixoo_api](https://github.com/Grayda/pixoo_api) — community command notes (including that night-view / weather-info are not a local light sensor)
+
+Data APIs:
+
+- [Open-Meteo](https://open-meteo.com/) — weather, forecast, and sunrise/sunset
+- [Google Directions](https://developers.google.com/maps/documentation/directions) — commute ETAs
+- [Sensibo](https://sensibo.github.io/) — room climate
+- [Jolpica](https://api.jolpi.ca/) — F1 session times (Ergast-compatible; thanks to the [Ergast](http://ergast.com/mrd/) API that preceded it)
+
+UI fonts via [Google Fonts](https://fonts.google.com/): [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (JetBrains) and [Syne](https://fonts.google.com/specimen/Syne) (Jacques Le Bailly).
+
+Built with [Pillow](https://python-pillow.org/), [FastAPI](https://fastapi.tiangolo.com/), [httpx](https://www.python-httpx.org/), [PyYAML](https://pyyaml.org/), and [Uvicorn](https://www.uvicorn.org/).
 
 ## Disclaimer
 
-PixelPixoo is an independent project and is not affiliated with Divoom, Sensibo, Google, or Formula 1. Use third-party APIs according to their terms and rate limits.
+PixelPixoo is an independent project and is not affiliated with Divoom, Sensibo, Google, Formula 1, or the authors of the libraries above. Use third-party APIs according to their terms and rate limits.

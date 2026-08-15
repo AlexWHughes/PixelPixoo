@@ -125,8 +125,16 @@ def reload_runtime() -> dict[str, Any]:
 
 
 @app.post("/api/pixoo/test")
-def test_pixoo() -> dict[str, Any]:
-    return runtime.test_pixoo()
+def test_pixoo(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    ip = ""
+    if isinstance(payload, dict):
+        ip = str(payload.get("ip") or "").strip()
+    return runtime.test_pixoo(ip or None)
+
+
+@app.get("/api/pixoo/discover")
+def discover_pixoo() -> dict[str, Any]:
+    return runtime.discover_pixoo()
 
 
 @app.get("/api/preview/{screen_name:path}")

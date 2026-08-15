@@ -50,6 +50,10 @@ class ScheduleConfig:
     windows: list[ScheduleWindow] = field(default_factory=list)
     # What to do outside windows: off = blank/turn off screen, pause = stop pushing but leave last frame
     outside: str = "off"
+    # Extra AND conditions while the dashboard would otherwise be on.
+    follow_sun: bool = False
+    sun_pad_minutes: int = 20
+    follow_sensibo: bool = False
 
 
 def _parse_hhmm(value: str) -> time:
@@ -109,11 +113,18 @@ def parse_schedule(raw: dict | None) -> ScheduleConfig:
     outside = str(raw.get("outside", "off")).lower().strip()
     if outside not in ("off", "pause"):
         outside = "off"
+    try:
+        pad = int(raw.get("sun_pad_minutes", 20))
+    except (TypeError, ValueError):
+        pad = 20
     return ScheduleConfig(
         enabled=bool(raw.get("enabled", False)),
         timezone=str(raw.get("timezone", "UTC")),
         windows=windows,
         outside=outside,
+        follow_sun=bool(raw.get("follow_sun", False)),
+        sun_pad_minutes=max(0, min(180, pad)),
+        follow_sensibo=bool(raw.get("follow_sensibo", False)),
     )
 
 
@@ -154,6 +165,9 @@ def schedule_public_dict(cfg: ScheduleConfig) -> dict:
         "enabled": cfg.enabled,
         "timezone": cfg.timezone,
         "outside": cfg.outside,
+        "follow_sun": cfg.follow_sun,
+        "sun_pad_minutes": cfg.sun_pad_minutes,
+        "follow_sensibo": cfg.follow_sensibo,
         "windows": [
             {
                 "days": [WEEKDAY_YAML[d] for d in w.days] if w.days else ["all"],

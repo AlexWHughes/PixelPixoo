@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/app.css?v=4" />
+  <link rel="stylesheet" href="/static/app.css?v=5" />
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
@@ -99,9 +99,11 @@
             </label>
           </div>
           <div class="row-actions">
+            <button type="button" class="btn ghost" id="btnDiscoverPixoo">Find on LAN</button>
             <button type="button" class="btn ghost" id="btnTestPixoo">Test Pixoo connection</button>
             <span class="inline-note" id="pixooTestNote"></span>
           </div>
+          <div id="pixooDiscover" class="discover" hidden></div>
         </section>
 
         <section class="panel" id="sec-display">
@@ -373,7 +375,7 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Only show the dashboard during these windows. Outside hours the Pixoo screen turns off (or pauses).</p>
+          <p class="hint">Only show the dashboard during these windows. Outside hours the Pixoo screen turns off (or pauses). Daylight and Sensibo are extra AND checks — the Pixoo 64 does not expose a light or occupancy sensor of its own.</p>
           <div class="fields three">
             <label>
               <span>Timezone</span>
@@ -386,9 +388,23 @@
                 <option value="pause">Pause pushes (leave last frame)</option>
               </select>
             </label>
-            <div class="row-actions" style="align-items:end">
-              <button type="button" class="btn tiny" id="btnAddWindow">Add window</button>
-            </div>
+            <label>
+              <span>Daylight pad (min) <em id="sunPadVal">20</em></span>
+              <input name="sun_pad_minutes" type="range" min="0" max="90" value="20" />
+            </label>
+          </div>
+          <div class="fields two">
+            <label class="check">
+              <input type="checkbox" name="follow_sun" />
+              <span>Follow sunrise / sunset <small>needs weather lat/lon — off from dusk to dawn</small></span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="follow_sensibo" />
+              <span>Follow Sensibo <small>off when rooms look vacant (occupancy, else all ACs off)</small></span>
+            </label>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn tiny" id="btnAddWindow">Add window</button>
           </div>
           <div id="scheduleList" class="stack"></div>
         </section>
@@ -547,6 +563,6 @@
     </div>
   </template>
 
-  <script src="/static/app.js?v=4" type="module"></script>
+  <script src="/static/app.js?v=5" type="module"></script>
 </body>
 </html>

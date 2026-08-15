@@ -890,6 +890,9 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         "enabled": bool(schedule.get("enabled", False)),
         "timezone": str(schedule.get("timezone", DEFAULT_TZ)),
         "outside": str(schedule.get("outside", "off")),
+        "follow_sun": bool(schedule.get("follow_sun", False)),
+        "sun_pad_minutes": max(0, min(180, int(schedule.get("sun_pad_minutes", 20) or 20))),
+        "follow_sensibo": bool(schedule.get("follow_sensibo", False)),
         "windows": windows,
     }
 

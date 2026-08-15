@@ -394,6 +394,10 @@ function fillConfig(cfg) {
   form.schedule_enabled.checked = !!cfg.schedule?.enabled;
   form.schedule_timezone.value = cfg.schedule?.timezone || DEFAULT_TZ;
   form.schedule_outside.value = cfg.schedule?.outside || "off";
+  form.follow_sun.checked = !!cfg.schedule?.follow_sun;
+  form.follow_sensibo.checked = !!cfg.schedule?.follow_sensibo;
+  form.sun_pad_minutes.value = cfg.schedule?.sun_pad_minutes ?? 20;
+  bindRange("sun_pad_minutes", "#sunPadVal");
   $("#scheduleList").innerHTML = "";
   for (const win of cfg.schedule?.windows || []) {
     addWindowRow(win);
@@ -514,6 +518,9 @@ function collectPayload() {
       enabled: form.schedule_enabled.checked,
       timezone: form.schedule_timezone.value.trim() || DEFAULT_TZ,
       outside: form.schedule_outside.value,
+      follow_sun: form.follow_sun.checked,
+      sun_pad_minutes: Number(form.sun_pad_minutes.value),
+      follow_sensibo: form.follow_sensibo.checked,
       windows: readWindows(),
     },
   };
@@ -588,8 +595,8 @@ async function refreshStatus() {
     ? "Preview (PNG)"
     : s.schedule_enabled
       ? s.schedule_active
-        ? "Live · in window"
-        : "Scheduled off"
+        ? `Live · ${s.schedule_reason || "in window"}`
+        : s.schedule_reason || "Scheduled off"
       : "Push to device";
   $("#statCount").textContent = `${s.screen_count ?? 0}`;
   $("#statRotate").textContent = `${s.rotate_seconds ?? "—"}s`;
@@ -707,12 +714,62 @@ async function testPixoo() {
   note.textContent = "Testing…";
   note.className = "inline-note";
   try {
-    const payload = collectPayload();
-    await api("/api/config", { method: "PUT", body: JSON.stringify(payload) });
-    const result = await api("/api/pixoo/test", { method: "POST", body: "{}" });
+    const ip = form.pixoo_ip.value.trim();
+    const result = await api("/api/pixoo/test", {
+      method: "POST",
+      body: JSON.stringify({ ip }),
+    });
     note.textContent = result.message;
     note.className = `inline-note ${result.ok ? "ok" : "bad"}`;
   } catch (err) {
+    note.textContent = err.message || String(err);
+    note.className = "inline-note bad";
+  }
+}
+
+async function discoverPixoo() {
+  const box = $("#pixooDiscover");
+  const note = $("#pixooTestNote");
+  box.hidden = false;
+  box.textContent = "Looking for Pixoo devices on this LAN…";
+  note.textContent = "";
+  try {
+    const data = await api("/api/pixoo/discover");
+    box.innerHTML = "";
+    if (!data.ok) {
+      box.textContent = data.message || "Discover failed.";
+      note.textContent = data.message || "Discover failed";
+      note.className = "inline-note bad";
+      return;
+    }
+    if (!data.devices?.length) {
+      box.textContent =
+        data.message ||
+        "None found. The lookup uses Divoom’s cloud (same public IP as this host).";
+      return;
+    }
+    for (const d of data.devices) {
+      const row = document.createElement("div");
+      row.className = "discover-item";
+      const label = document.createElement("span");
+      label.textContent = `${d.name} · ${d.ip}`;
+      const use = document.createElement("button");
+      use.type = "button";
+      use.className = "btn tiny";
+      use.textContent = "Use";
+      use.addEventListener("click", () => {
+        form.pixoo_ip.value = d.ip;
+        note.textContent = `Using ${d.name} (${d.ip}) — save to apply`;
+        note.className = "inline-note ok";
+      });
+      row.appendChild(label);
+      row.appendChild(use);
+      box.appendChild(row);
+    }
+    note.textContent = data.message;
+    note.className = "inline-note ok";
+  } catch (err) {
+    box.textContent = err.message || String(err);
     note.textContent = err.message || String(err);
     note.className = "inline-note bad";
   }
@@ -932,6 +989,7 @@ function wireUi() {
     }
   });
   $("#btnTestPixoo").addEventListener("click", testPixoo);
+  $("#btnDiscoverPixoo").addEventListener("click", discoverPixoo);
   $("#btnDiscoverSensibo").addEventListener("click", discoverSensibo);
   $("#btnRefreshPreviews").addEventListener("click", refreshStatus);
   form.weather_enabled.addEventListener("change", toggleSections);
