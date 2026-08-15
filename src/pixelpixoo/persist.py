@@ -718,6 +718,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
     rotate = float(payload.get("rotate_seconds", 18))
     brightness = int(payload.get("brightness", 80))
     enable_f1 = bool(payload.get("enable_f1", True))
+    enable_countdown = bool(payload.get("enable_countdown", True))
     pixoo_ip = str(payload.get("pixoo_ip", "")).strip()
     if not pixoo_ip:
         raise ValueError("pixoo_ip is required")
@@ -727,6 +728,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         "rotate_seconds": max(15.0, rotate),
         "brightness": max(0, min(100, brightness)),
         "enable_f1": enable_f1,
+        "enable_countdown": enable_countdown,
     }
 
     weather = payload.get("weather") or {}
@@ -817,7 +819,6 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         if label and at:
             countdown.append({"label": label, "at": at})
     yaml_data["countdown"] = countdown
-    yaml_data["enable_countdown"] = bool(payload.get("enable_countdown", True))
 
     bins = payload.get("bins") or {}
     bin_streams = []

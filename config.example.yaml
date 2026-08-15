@@ -5,6 +5,7 @@ pixoo_ip: ""
 rotate_seconds: 18
 brightness: 80
 enable_f1: true
+enable_countdown: true
 
 display:
   text_scale: normal   # tiny | compact | normal | large
@@ -18,6 +19,7 @@ display:
 
 # Example location: Sydney CBD, Australia
 weather:
+  enabled: true
   latitude: -33.8688
   longitude: 151.2093
   label: "SYD"
@@ -36,12 +38,14 @@ f1:
   show_country: true
 
 traffic:
+  enabled: false
   routes:
     - name: "WORK"
       origin: "Example St, Suburb NSW 2000"
       destination: "Example Ave, Sydney NSW 2000"
 
 sensibo:
+  enabled: false
   devices: []          # pin devices in the web UI, or leave empty to auto-discover
   show_temp: true
   show_humidity: true

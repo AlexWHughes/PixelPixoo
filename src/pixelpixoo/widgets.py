@@ -148,6 +148,7 @@ def visible_tiles(cfg: AppConfig, tiles: list[str]) -> list[str]:
     bins win while due, otherwise F1. That avoids a blank reserved bins row and
     keeps the remaining layout taller / more readable.
     """
+    tiles = [t for t in tiles if feature_is_on(_tile_kind(t), cfg)]
     has_bins = any(_tile_kind(t) == "bins" for t in tiles)
     has_f1 = any(_tile_kind(t) == "f1" for t in tiles)
     if not (has_bins and has_f1):

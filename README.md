@@ -39,6 +39,7 @@ Also included:
 - Tiny / compact / normal text scales for dense dashboards
 - Crossfade between frames, brightness + rotate interval
 - Optional on/off schedule (timezone-aware windows, sunrise/sunset, Sensibo presence)
+- Per-feature enable switches (Sensibo, Traffic, F1, …) — off stops API calls and drops the screen, settings stay saved
 - Config web UI with live previews, secret masking, export/import
 - Docker + Portainer-friendly deploy (named volumes; no secrets in git)
 

@@ -409,6 +409,17 @@ input[type="range"] {
   color: var(--muted);
 }
 
+.feature-body {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.panel.is-off .feature-body {
+  opacity: 0.45;
+}
+
 .align-end {
   align-content: end;
 }
