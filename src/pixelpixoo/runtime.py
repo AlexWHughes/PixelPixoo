@@ -35,6 +35,10 @@ from pixelpixoo.theme import theme_for
 logger = logging.getLogger(__name__)
 
 
+def _pixoo_client(cfg: AppConfig, *, timeout: float = 10.0) -> PixooClient:
+    return PixooClient(require_lan_ipv4(cfg.pixoo_ip), timeout=timeout)
+
+
 def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
     # Explicit custom views always win
     if cfg.views:
@@ -284,8 +288,12 @@ class PixelRuntime:
                     self._update_status(current_screen=f"({decision.reason})")
                     if preview_dir is None:
                         if pixoo is None:
-                            pixoo = PixooClient(cfg.pixoo_ip)
-                        if not screen_was_off and cfg.schedule.outside == "off":
+                            try:
+                                pixoo = _pixoo_client(cfg)
+                            except ValueError as exc:
+                                logger.error("Invalid Pixoo IP: %s", exc)
+                                self._update_status(last_error=str(exc))
+                        if pixoo is not None and not screen_was_off and cfg.schedule.outside == "off":
                             try:
                                 pixoo.set_screen(False)
                                 screen_was_off = True
@@ -341,8 +349,8 @@ class PixelRuntime:
                         continue
 
                     if preview_dir is None:
-                        pixoo = PixooClient(cfg.pixoo_ip)
                         try:
+                            pixoo = _pixoo_client(cfg)
                             pixoo.bootstrap(cfg.brightness)
                         except Exception as exc:
                             logger.exception("Pixoo bootstrap failed")

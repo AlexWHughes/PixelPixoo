@@ -182,7 +182,9 @@ def discover_lan_devices(*, timeout: float = 8.0) -> list[dict[str, str]]:
         if not isinstance(item, dict):
             continue
         ip = str(item.get("DevicePrivateIP") or "").strip()
-        if not ip:
+        try:
+            ip = require_lan_ipv4(ip)
+        except ValueError:
             continue
         devices.append(
             {

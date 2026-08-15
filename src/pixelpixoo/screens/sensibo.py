@@ -179,7 +179,9 @@ def _parse_pod(raw: dict) -> SensiboSnapshot:
 def _parse_occupancy(measurements: dict | None) -> str | None:
     if not measurements:
         return None
-    raw = measurements.get("occupancy", measurements.get("roomOccupancy"))
+    raw = measurements.get("occupancy")
+    if raw is None:
+        raw = measurements.get("roomOccupancy")
     if isinstance(raw, dict):
         raw = raw.get("status") or raw.get("type") or raw.get("state")
     if isinstance(raw, bool):

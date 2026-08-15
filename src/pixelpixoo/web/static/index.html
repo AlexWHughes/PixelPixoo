@@ -76,7 +76,7 @@
           <div class="fields three">
             <label>
               <span>Pixoo IP</span>
-              <input name="pixoo_ip" required pattern="^[-0-9A-Za-z.:]+$" placeholder="192.168.1.100" />
+              <input name="pixoo_ip" required pattern="^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$" placeholder="192.168.1.100" title="Dotted LAN IPv4 address" />
             </label>
             <label>
               <span>Brightness <em id="brightnessVal">80</em></span>
@@ -585,6 +585,6 @@
     </div>
   </template>
 
-  <script src="/static/app.js?v=6" type="module"></script>
+  <script src="/static/app.js?v=7" type="module"></script>
 </body>
 </html>

@@ -55,7 +55,7 @@ def evaluate_display(cfg: AppConfig, http: httpx.Client) -> DisplayDecision:
 
 
 def _geo(cfg: AppConfig) -> tuple[float, float, str] | None:
-    if cfg.weather:
+    if cfg.weather and cfg.weather.latitude and cfg.weather.longitude:
         tz = cfg.weather.timezone or cfg.schedule.timezone
         return cfg.weather.latitude, cfg.weather.longitude, tz
     if cfg.location:

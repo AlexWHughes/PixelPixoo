@@ -253,10 +253,12 @@ function renderTileOrder() {
     up.textContent = "↑";
     up.disabled = idx === 0;
     up.addEventListener("click", () => {
-      if (pos <= 0) return;
-      [selectedTiles[pos - 1], selectedTiles[pos]] = [
+      if (idx <= 0) return;
+      const otherPos = selectedTiles.indexOf(shown[idx - 1]);
+      if (pos < 0 || otherPos < 0) return;
+      [selectedTiles[otherPos], selectedTiles[pos]] = [
         selectedTiles[pos],
-        selectedTiles[pos - 1],
+        selectedTiles[otherPos],
       ];
       renderTilePicker();
     });
@@ -266,10 +268,12 @@ function renderTileOrder() {
     down.textContent = "↓";
     down.disabled = idx === shown.length - 1;
     down.addEventListener("click", () => {
-      if (pos < 0 || pos >= selectedTiles.length - 1) return;
-      [selectedTiles[pos], selectedTiles[pos + 1]] = [
-        selectedTiles[pos + 1],
+      if (idx >= shown.length - 1) return;
+      const otherPos = selectedTiles.indexOf(shown[idx + 1]);
+      if (pos < 0 || otherPos < 0) return;
+      [selectedTiles[otherPos], selectedTiles[pos]] = [
         selectedTiles[pos],
+        selectedTiles[otherPos],
       ];
       renderTilePicker();
     });

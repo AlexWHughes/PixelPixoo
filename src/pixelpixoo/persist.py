@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from pixelpixoo.config import (
     LABEL_MAX,
     load_config,
 )
+from pixelpixoo.pixoo_client import require_lan_ipv4
 from pixelpixoo.renderer import parse_hex_color
 from pixelpixoo.schedule import DEFAULT_TZ, WEEKDAY_YAML, schedule_public_dict
 from pixelpixoo.screens.bins import LABEL_MAX as BIN_LABEL_MAX
@@ -311,6 +313,26 @@ def _coerce_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _weather_coords(weather: dict[str, Any]) -> dict[str, float]:
+    """Return lat/lon to persist, or {} when no location was supplied."""
+    lat_in = weather.get("latitude")
+    lon_in = weather.get("longitude")
+    if lat_in in (None, "") and lon_in in (None, ""):
+        return {}
+    try:
+        lat = float(lat_in)
+        lon = float(lon_in)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Weather latitude and longitude must be numbers") from exc
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        raise ValueError("Weather latitude and longitude must be finite numbers")
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise ValueError(
+            "Weather latitude must be in [-90, 90] and longitude in [-180, 180]"
+        )
+    return {"latitude": lat, "longitude": lon}
 
 
 def _usable_secret(value: Any, fallback: str) -> str:
@@ -719,9 +741,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
     brightness = int(payload.get("brightness", 80))
     enable_f1 = bool(payload.get("enable_f1", True))
     enable_countdown = bool(payload.get("enable_countdown", True))
-    pixoo_ip = str(payload.get("pixoo_ip", "")).strip()
-    if not pixoo_ip:
-        raise ValueError("pixoo_ip is required")
+    pixoo_ip = require_lan_ipv4(str(payload.get("pixoo_ip", "")).strip())
 
     yaml_data: dict[str, Any] = {
         "pixoo_ip": pixoo_ip,
@@ -733,15 +753,9 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
 
     weather = payload.get("weather") or {}
     forecast_days = max(1, min(7, _coerce_int(weather.get("forecast_days"), 1)))
-    try:
-        latitude = float(weather.get("latitude", 0) or 0)
-        longitude = float(weather.get("longitude", 0) or 0)
-    except (TypeError, ValueError):
-        latitude, longitude = 0.0, 0.0
     yaml_data["weather"] = {
         "enabled": bool(weather.get("enabled", True)),
-        "latitude": latitude,
-        "longitude": longitude,
+        **_weather_coords(weather if isinstance(weather, dict) else {}),
         "label": str(weather.get("label", "HOME"))[:LABEL_MAX],
         "timezone": str(weather.get("timezone", "UTC")),
         "forecast_days": forecast_days,

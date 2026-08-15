@@ -1,8 +1,8 @@
+# PixelPixoo
+
 <p align="center">
   <img src="docs/logo.png" width="96" alt="PixelPixoo logo" />
 </p>
-
-# PixelPixoo
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+" /></a>
@@ -10,7 +10,7 @@
   <a href="docker-compose.yml"><img src="https://img.shields.io/badge/deploy-docker-2496ED" alt="Docker" /></a>
 </p>
 
-Push-loop dashboard for a [Divoom Pixoo 64](https://divoom.com/) — weather, commute times, climate, F1, countdowns, and more — with a built-in web UI.
+Push-loop dashboard for a [Divoom Pixoo 64](https://divoom.com/products/pixoo-64) — weather, commute times, climate, F1, countdowns, and more — with a built-in web UI.
 
 Frames are rendered as 64×64 RGB and POSTed to the device on your LAN. No cloud middleman for the display path.
 
