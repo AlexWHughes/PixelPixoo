@@ -61,7 +61,7 @@ flowchart LR
   PP -->|64×64 RGB POST /post| PIX
 ```
 
-LAN-only display path: the loop paints frames with Pillow, then pushes them to the device. APIs are only for screen content.
+Display path is LAN-only: the loop paints frames with Pillow, then POSTs them to the Pixoo. External APIs (Open-Meteo, Google, Sensibo, Jolpica) are only used for screen content. Optional same-LAN discovery is the exception — it asks Divoom’s cloud which devices share this public IP.
 
 ## Quick start
 
@@ -71,20 +71,20 @@ LAN-only display path: the loop paints frames with Pillow, then pushes them to t
 - A Pixoo 64 reachable on your LAN (for live push)
 - Optional: Google Maps + Sensibo API keys for those screens
 
-### Docker (local bind mounts)
+### Docker (local)
 
 ```bash
 git clone https://github.com/AlexWHughes/PixelPixoo.git
 cd PixelPixoo
 
-cp config.example.yaml config.yaml
 cp .env.example .env
 # Edit .env — at least PIXOO_IP. Add API keys as needed.
-# Edit config.yaml — weather lat/lon (example is Sydney CBD).
 
-docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
+docker compose up --build -d
 open http://localhost:8787
 ```
+
+Compose uses named volumes. On first boot the entrypoint seeds `config.example.yaml` into the config volume; finish lat/lon and tiles in the web UI.
 
 ### Docker (named volumes — Portainer / GitHub)
 
@@ -207,7 +207,7 @@ Data APIs:
 - [Open-Meteo](https://open-meteo.com/) — weather, forecast, and sunrise/sunset
 - [Google Directions](https://developers.google.com/maps/documentation/directions) — commute ETAs
 - [Sensibo](https://sensibo.github.io/) — room climate
-- [Jolpica](https://api.jolpi.ca/) — F1 session times (Ergast-compatible; thanks to the [Ergast](http://ergast.com/mrd/) API that preceded it)
+- [Jolpica](https://api.jolpi.ca/) — F1 session times (Ergast-compatible; thanks to the [Ergast Developer API](https://web.archive.org/web/20250114180235/http://ergast.com/mrd/) that preceded it)
 
 UI fonts via [Google Fonts](https://fonts.google.com/): [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (JetBrains) and [Syne](https://fonts.google.com/specimen/Syne) (Jacques Le Bailly).
 
