@@ -40,7 +40,7 @@ def evaluate_display(cfg: AppConfig, http: httpx.Client) -> DisplayDecision:
     if sched.follow_sun:
         daylight = _is_daylight(cfg, http)
         if daylight is False:
-            return DisplayDecision(False, "after sunset")
+            return DisplayDecision(False, "outside daylight")
 
     if sched.follow_sensibo:
         home = climate_suggests_home(cfg, http)
@@ -74,7 +74,7 @@ def _is_daylight(cfg: AppConfig, http: httpx.Client) -> bool | None:
     except Exception:
         tz = ZoneInfo("UTC")
     now = datetime.now(tz)
-    window = _sun_window(lat, lon, tz_name, http)
+    window = _sun_window(lat, lon, tz_name, tz, http)
     if window is None:
         return None
     sunrise, sunset = window
@@ -85,9 +85,14 @@ def _is_daylight(cfg: AppConfig, http: httpx.Client) -> bool | None:
 
 
 def _sun_window(
-    lat: float, lon: float, tz_name: str, http: httpx.Client
+    lat: float,
+    lon: float,
+    tz_name: str,
+    tz: ZoneInfo,
+    http: httpx.Client,
 ) -> tuple[datetime, datetime] | None:
-    key = f"{lat:.4f}|{lon:.4f}|{tz_name}"
+    today = datetime.now(tz).date().isoformat()
+    key = f"{lat:.4f}|{lon:.4f}|{tz_name}|{today}"
     fresh = _sun_cache.get(key, _SUN_TTL_SEC)
     if fresh is not None:
         return fresh
@@ -112,9 +117,9 @@ def _sun_window(
         sunrise = datetime.fromisoformat(str(rise_raw))
         sunset = datetime.fromisoformat(str(set_raw))
         if sunrise.tzinfo is None:
-            sunrise = sunrise.replace(tzinfo=ZoneInfo(tz_name))
+            sunrise = sunrise.replace(tzinfo=tz)
         if sunset.tzinfo is None:
-            sunset = sunset.replace(tzinfo=ZoneInfo(tz_name))
+            sunset = sunset.replace(tzinfo=tz)
         pair = (sunrise, sunset)
         _sun_cache.set(key, pair)
         return pair

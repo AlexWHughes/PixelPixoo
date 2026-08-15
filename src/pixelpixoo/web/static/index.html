@@ -46,7 +46,7 @@
           <div class="matrix-meta">
             <div><span class="k">now</span> <strong id="statCurrent">—</strong></div>
             <div><span class="k">last</span> <strong id="statLast">—</strong></div>
-            <div><span class="k">pushes</span> <strong id="statPushes">0</strong></div>
+            <div hidden><span class="k">pushes</span> <strong id="statPushes">0</strong></div>
             <div><span class="k">errors</span> <strong id="statErrors">0</strong></div>
           </div>
         </div>
@@ -72,7 +72,6 @@
         <section class="panel" id="sec-device">
           <div class="panel-head">
             <h2>Device</h2>
-            <p class="hint">LAN address the container can reach. Test before going live.</p>
           </div>
           <div class="fields three">
             <label>
@@ -109,7 +108,6 @@
         <section class="panel" id="sec-display">
           <div class="panel-head">
             <h2>Display</h2>
-            <p class="hint">Text scale and frame layout. Use multi-tile layouts to pack several details on one 64×64 view.</p>
           </div>
 
           <p class="field-label">Text scale</p>
@@ -220,7 +218,7 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Open-Meteo — no API key. Current conditions plus optional multi-day forecast.</p>
+          <p class="hint">Open-Meteo Data</p>
           <div class="fields four weather-fields">
             <label>
               <span>Label <small>≤16 chars</small></span>
@@ -297,7 +295,6 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Indoor temp, humidity, and AC state via Sensibo API v2. Toggle which fields appear on the matrix.</p>
           <div class="fields two">
             <label class="grow">
               <span>Sensibo API key <small id="sensiboHint"></small></span>
@@ -339,7 +336,6 @@
               <span>Enabled</span>
             </label>
           </div>
-          <p class="hint">Jolpica weekend sessions — practice, sprint (when present), quali, and race with countdown + local date/time.</p>
           <div class="fields two">
             <label>
               <span>Session mode</span>
@@ -390,7 +386,7 @@
             </label>
             <label>
               <span>Daylight pad (min) <em id="sunPadVal">20</em></span>
-              <input name="sun_pad_minutes" type="range" min="0" max="90" value="20" />
+              <input name="sun_pad_minutes" type="range" min="0" max="180" value="20" />
             </label>
           </div>
           <div class="fields two">
@@ -423,7 +419,7 @@
             <h2>Bin night</h2>
             <button type="button" class="btn tiny" id="btnAddBin">Add stream</button>
           </div>
-          <p class="hint">Weekly / fortnightly kerbside schedule. When both <em>bins</em> and <em>f1</em> are in the tile list they share one slot — bins while due, F1 otherwise (no blank reserved row). Collection day is morning pickup; with “eve before” (default) the Pixoo says TONIGHT on the evening you put bins out.</p>
+          <p class="hint">Weekly or fortnightly. Shares a tile with F1 when both are on — bins when due, F1 otherwise. Morning collection; “eve before” shows TONIGHT the night you put bins out.</p>
           <div class="fields three">
             <label class="check">
               <input type="checkbox" name="bins_enabled" />
@@ -447,7 +443,6 @@
 
         <footer class="form-foot">
           <button type="submit" class="btn primary wide">Save &amp; apply</button>
-          <p class="fine">Writes <code>config.yaml</code> + updates <code>.env</code> secrets, then hot-reloads. <strong>Backup</strong> saves the live UI then downloads the full config (display, views, screens, secrets). <strong>Restore</strong> applies that backup.</p>
         </footer>
       </form>
     </div>

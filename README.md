@@ -1,12 +1,22 @@
+<p align="center">
+  <img src="docs/logo.png" width="96" alt="PixelPixoo logo" />
+</p>
+
 # PixelPixoo
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
+  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/deploy-docker-2496ED" alt="Docker" /></a>
+</p>
 
 Push-loop dashboard for a [Divoom Pixoo 64](https://divoom.com/) — weather, commute times, climate, F1, countdowns, and more — with a built-in web UI.
 
 Frames are rendered as 64×64 RGB and POSTed to the device on your LAN. No cloud middleman for the display path.
 
-![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Docker](https://img.shields.io/badge/deploy-docker-2496ED)
+<p align="center">
+  <img src="docs/banner.jpg" alt="PixelPixoo running on a Pixoo 64" width="720" />
+</p>
 
 ## Features
 
@@ -19,6 +29,10 @@ Frames are rendered as 64×64 RGB and POSTed to the device on your LAN. No cloud
 | Countdown | Config dates | No |
 | Bin night | Weekly / fortnightly schedule | No (conditional tile) |
 
+<p align="center">
+  <img src="docs/screens.png" alt="Sample 64×64 PixelPixoo frames: weather, traffic, climate, F1, countdown" />
+</p>
+
 Also included:
 
 - Custom multi-tile layouts on a single 64×64 frame (`row_pattern`, tile picker)
@@ -27,6 +41,26 @@ Also included:
 - Optional on/off schedule (timezone-aware windows, sunrise/sunset, Sensibo presence)
 - Config web UI with live previews, secret masking, export/import
 - Docker + Portainer-friendly deploy (named volumes; no secrets in git)
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  subgraph sources [Data]
+    OM[Open-Meteo]
+    GM[Google Directions]
+    SB[Sensibo]
+    F1[Jolpica]
+  end
+  UI[Web UI]
+  PP[PixelPixoo]
+  PIX[Pixoo 64]
+  sources --> PP
+  UI -->|config + preview| PP
+  PP -->|64×64 RGB POST /post| PIX
+```
+
+LAN-only display path: the loop paints frames with Pillow, then pushes them to the device. APIs are only for screen content.
 
 ## Quick start
 
@@ -132,6 +166,7 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 | GET | `/api/preview/{name}` | PNG frame |
 
 ## Security notes
+
 - Export JSON contains **raw API keys**. Store backups privately.
 - The web UI has **no authentication**. Bind it to a trusted LAN/VPN only (or put it behind a reverse proxy with auth).
 
@@ -145,6 +180,12 @@ PYTHONPATH=src python -m pixelpixoo
 ```
 
 Package layout lives under `src/pixelpixoo/`.
+
+To regenerate README sample frames:
+
+```bash
+PYTHONPATH=src python3 scripts/render_readme_assets.py
+```
 
 ## Contributing
 
@@ -169,7 +210,7 @@ Data APIs:
 
 UI fonts via [Google Fonts](https://fonts.google.com/): [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (JetBrains) and [Syne](https://fonts.google.com/specimen/Syne) (Jacques Le Bailly).
 
-Built with [Pillow](https://python-pillow.org/), [FastAPI](https://fastapi.tiangolo.com/), [httpx](https://www.python-httpx.org/), [PyYAML](https://pyyaml.org/), and [Uvicorn](https://www.uvicorn.org/).
+Built with [Pillow](https://python-pillow.org/), [FastAPI](https://fastapi.tiangolo.com/), [httpx](https://www.python-httpx.org/), [PyYAML](https://pyyaml.org/), and [Uvicorn](https://uvicorn.dev/).
 
 ## Disclaimer
 

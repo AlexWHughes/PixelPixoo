@@ -205,6 +205,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
         "preview_mode": bool(preview),
         "preview_dir": preview or "/preview",
         "enable_f1": loaded.enable_f1,
+        "enable_countdown": loaded.enable_countdown,
         "f1": {
             "enabled": loaded.f1.enabled,
             "sessions": list(loaded.f1.sessions),
@@ -217,8 +218,10 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
         },
         "weather": weather_block,
         "traffic": {
-            "enabled": bool(traffic_routes) and (
-                traffic_raw.get("enabled", True) is not False
+            "enabled": (
+                False
+                if traffic_raw.get("enabled") is False
+                else bool(loaded.traffic) or bool(traffic_raw.get("enabled", False))
             ),
             "routes": traffic_routes,
         },
@@ -228,7 +231,7 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
             "enabled": (
                 False
                 if sensibo_raw.get("enabled") is False
-                else bool(loaded.sensibo)
+                else bool(loaded.sensibo) or bool(sensibo_raw.get("enabled", False))
             ),
             "devices": sensibo_devices,
             "auto_discover": len(sensibo_devices) == 0,
@@ -298,6 +301,16 @@ def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str
     if yaml_snapshot is not None:
         bundle["yaml"] = yaml_snapshot
     return bundle
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    """Parse an int; keep explicit 0; default on missing, empty, or invalid."""
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _usable_secret(value: Any, fallback: str) -> str:
@@ -408,6 +421,7 @@ def _export_config_from_form(
     config["preview_mode"] = bool(config.get("preview_mode"))
     config["preview_dir"] = str(config.get("preview_dir") or "/preview")
     config["enable_f1"] = bool(config.get("enable_f1", True))
+    config["enable_countdown"] = bool(config.get("enable_countdown", True))
     config["rotate_seconds"] = float(config.get("rotate_seconds", 18))
     config["brightness"] = int(config.get("brightness", 80))
     return config
@@ -468,6 +482,9 @@ def _export_config_from_saved(*, google: str, sensibo: str) -> dict[str, Any]:
         "preview_mode": bool(pub.get("preview_mode")),
         "preview_dir": pub.get("preview_dir") or "/preview",
         "enable_f1": bool(raw.get("enable_f1", pub.get("enable_f1", True))),
+        "enable_countdown": bool(
+            raw.get("enable_countdown", pub.get("enable_countdown", True))
+        ),
         "f1": f1 if not isinstance(raw.get("f1"), dict) else {**f1, **raw["f1"]},
         "weather": weather,
         "traffic": traffic,
@@ -570,6 +587,7 @@ def _merge_yaml_into_config(config: dict[str, Any], yaml_data: dict[str, Any]) -
         "schedule",
         "f1",
         "enable_f1",
+        "enable_countdown",
         "rotate_seconds",
         "brightness",
         "pixoo_ip",
@@ -590,6 +608,7 @@ def _payload_from_yaml_snapshot(
         "preview_mode": False,
         "preview_dir": "/preview",
         "enable_f1": bool(yaml_data.get("enable_f1", True)),
+        "enable_countdown": bool(yaml_data.get("enable_countdown", True)),
         "f1": yaml_data.get("f1") or {},
         "weather": yaml_data.get("weather") or {},
         "traffic": yaml_data.get("traffic") or {},
@@ -711,20 +730,22 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
     }
 
     weather = payload.get("weather") or {}
-    if weather.get("enabled", True):
-        forecast_days = max(1, min(7, int(weather.get("forecast_days", 1))))
-        yaml_data["weather"] = {
-            "enabled": True,
-            "latitude": float(weather.get("latitude", 0)),
-            "longitude": float(weather.get("longitude", 0)),
-            "label": str(weather.get("label", "HOME"))[:LABEL_MAX],
-            "timezone": str(weather.get("timezone", "UTC")),
-            "forecast_days": forecast_days,
-            "show_current": bool(weather.get("show_current", True)),
-            "show_forecast": bool(weather.get("show_forecast", forecast_days > 1)),
-        }
-    else:
-        yaml_data["weather"] = {"enabled": False}
+    forecast_days = max(1, min(7, _coerce_int(weather.get("forecast_days"), 1)))
+    try:
+        latitude = float(weather.get("latitude", 0) or 0)
+        longitude = float(weather.get("longitude", 0) or 0)
+    except (TypeError, ValueError):
+        latitude, longitude = 0.0, 0.0
+    yaml_data["weather"] = {
+        "enabled": bool(weather.get("enabled", True)),
+        "latitude": latitude,
+        "longitude": longitude,
+        "label": str(weather.get("label", "HOME"))[:LABEL_MAX],
+        "timezone": str(weather.get("timezone", "UTC")),
+        "forecast_days": forecast_days,
+        "show_current": bool(weather.get("show_current", True)),
+        "show_forecast": bool(weather.get("show_forecast", forecast_days > 1)),
+    }
 
     f1 = payload.get("f1") or {}
     sessions = [
@@ -755,7 +776,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         if name and origin and destination:
             routes.append({"name": name, "origin": origin, "destination": destination})
     yaml_data["traffic"] = {
-        "enabled": bool(traffic.get("enabled", True)) and bool(routes),
+        "enabled": bool(traffic.get("enabled", False)),
         "routes": routes,
     }
 
@@ -796,6 +817,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         if label and at:
             countdown.append({"label": label, "at": at})
     yaml_data["countdown"] = countdown
+    yaml_data["enable_countdown"] = bool(payload.get("enable_countdown", True))
 
     bins = payload.get("bins") or {}
     bin_streams = []
@@ -820,7 +842,7 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
             entry["color"] = color
         bin_streams.append(entry)
     yaml_data["bins"] = {
-        "enabled": bool(bins.get("enabled", True)) and bool(bin_streams),
+        "enabled": bool(bins.get("enabled", False)),
         "timezone": str(bins.get("timezone", DEFAULT_TZ)),
         "lead_days": max(0, min(6, int(bins.get("lead_days", 1)))),
         "eve_before": bool(bins.get("eve_before", True)),
@@ -891,7 +913,9 @@ def apply_config_payload(payload: dict[str, Any]) -> AppConfig:
         "timezone": str(schedule.get("timezone", DEFAULT_TZ)),
         "outside": str(schedule.get("outside", "off")),
         "follow_sun": bool(schedule.get("follow_sun", False)),
-        "sun_pad_minutes": max(0, min(180, int(schedule.get("sun_pad_minutes", 20) or 20))),
+        "sun_pad_minutes": max(
+            0, min(180, _coerce_int(schedule.get("sun_pad_minutes"), 20))
+        ),
         "follow_sensibo": bool(schedule.get("follow_sensibo", False)),
         "windows": windows,
     }

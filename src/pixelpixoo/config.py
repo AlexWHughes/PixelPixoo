@@ -149,6 +149,7 @@ class AppConfig:
     countdown: list[CountdownTarget] = field(default_factory=list)
     bins: BinsConfig | None = None
     enable_f1: bool = True
+    enable_countdown: bool = True
     f1: F1Config = field(default_factory=F1Config)
     sensibo: SensiboConfig | None = None
     display: DisplayConfig = field(default_factory=DisplayConfig)
@@ -342,14 +343,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                     "traffic.routes configured but GOOGLE_MAPS_API_KEY is unset; skipping traffic"
                 )
 
+    enable_countdown = bool(raw.get("enable_countdown", True))
     countdown: list[CountdownTarget] = []
-    for item in raw.get("countdown") or []:
-        if isinstance(item, dict) and "label" in item and "at" in item:
-            countdown.append(
-                CountdownTarget(
-                    label=str(item["label"])[:COUNTDOWN_LABEL_MAX], at=str(item["at"])
+    countdown_raw = raw.get("countdown")
+    if isinstance(countdown_raw, list):
+        for item in countdown_raw:
+            if isinstance(item, dict) and "label" in item and "at" in item:
+                countdown.append(
+                    CountdownTarget(
+                        label=str(item["label"])[:COUNTDOWN_LABEL_MAX],
+                        at=str(item["at"]),
+                    )
                 )
-            )
 
     bins = _parse_bins(raw.get("bins"))
 
@@ -428,7 +433,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     )
 
     location: tuple[float, float, str] | None = None
-    weather_raw = raw.get("weather")
     if isinstance(weather_raw, dict):
         try:
             location = (
@@ -450,6 +454,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         countdown=countdown,
         bins=bins,
         enable_f1=f1.enabled,
+        enable_countdown=enable_countdown,
         f1=f1,
         sensibo=sensibo,
         display=display,

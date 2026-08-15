@@ -1,7 +1,7 @@
 # Copy to config.yaml and customise for your setup.
 # Secrets belong in .env (never commit them): PIXOO_IP, GOOGLE_MAPS_API_KEY, SENSIBO_API_KEY.
 
-pixoo_ip: "192.168.1.50"
+pixoo_ip: ""
 rotate_seconds: 18
 brightness: 80
 enable_f1: true

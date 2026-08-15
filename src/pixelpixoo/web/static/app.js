@@ -730,9 +730,11 @@ async function testPixoo() {
 async function discoverPixoo() {
   const box = $("#pixooDiscover");
   const note = $("#pixooTestNote");
+  const btnDiscoverPixoo = $("#btnDiscoverPixoo");
   box.hidden = false;
   box.textContent = "Looking for Pixoo devices on this LAN…";
   note.textContent = "";
+  btnDiscoverPixoo.disabled = true;
   try {
     const data = await api("/api/pixoo/discover");
     box.innerHTML = "";
@@ -772,6 +774,8 @@ async function discoverPixoo() {
     box.textContent = err.message || String(err);
     note.textContent = err.message || String(err);
     note.className = "inline-note bad";
+  } finally {
+    btnDiscoverPixoo.disabled = false;
   }
 }
 

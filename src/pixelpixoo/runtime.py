@@ -16,7 +16,12 @@ import httpx
 from PIL import Image
 
 from pixelpixoo.config import AppConfig, load_config, resolve_app_timezone
-from pixelpixoo.pixoo_client import PixooClient, discover_lan_devices, summarize_conf
+from pixelpixoo.pixoo_client import (
+    PixooClient,
+    discover_lan_devices,
+    require_lan_ipv4,
+    summarize_conf,
+)
 from pixelpixoo.presence import evaluate_display
 from pixelpixoo.renderer import error_frame
 from pixelpixoo.screens.composite import build_view_screens
@@ -61,8 +66,9 @@ def build_screens(cfg: AppConfig, http: httpx.Client) -> list[Any]:
         screens.extend(build_sensibo_screens(cfg.sensibo, http, theme=theme))
     if cfg.enable_f1 and cfg.f1.enabled:
         screens.append(F1Screen(client=http, theme=theme, cfg=cfg.f1))
-    for target in cfg.countdown:
-        screens.append(CountdownScreen(target, theme=theme))
+    if cfg.enable_countdown:
+        for target in cfg.countdown:
+            screens.append(CountdownScreen(target, theme=theme))
     return screens
 
 
@@ -200,7 +206,11 @@ class PixelRuntime:
 
     def test_pixoo(self, ip: str | None = None) -> dict[str, Any]:
         cfg = self._cfg or load_config()
-        target = (ip or cfg.pixoo_ip).strip()
+        raw = (ip if ip is not None else cfg.pixoo_ip).strip()
+        try:
+            target = require_lan_ipv4(raw)
+        except ValueError as exc:
+            return {"ok": False, "ip": raw, "message": str(exc)}
         client = PixooClient(target, timeout=5.0)
         try:
             conf = client.get_all_conf()

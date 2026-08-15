@@ -11,7 +11,9 @@ does not copy that library.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -23,6 +25,42 @@ SIZE = 64
 # Firmware can stop accepting frames after a few hundred PicIDs; reset often.
 GIF_ID_LIMIT = 32
 LAN_DISCOVER_URL = "https://app.divoom-gz.com/Device/ReturnSameLANDevice"
+# Dotted decimal only — no hostnames, ports, octal, or shortened forms.
+_IPV4_DOTTED = re.compile(
+    r"^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$"
+)
+_LAN_V4 = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+)
+
+
+def require_lan_ipv4(host: str) -> str:
+    """Return a RFC1918 dotted IPv4 address, or raise ValueError.
+
+    Rejects hostnames, ports, URLs, loopback, link-local (incl. cloud
+    metadata), multicast, unspecified, and public addresses.
+    """
+    text = str(host).strip()
+    if not text:
+        raise ValueError("Pixoo IP is required")
+    if not _IPV4_DOTTED.fullmatch(text):
+        raise ValueError("Pixoo IP must be a dotted LAN IPv4 address")
+    try:
+        addr = ipaddress.IPv4Address(text)
+    except ipaddress.AddressValueError as exc:
+        raise ValueError("Pixoo IP must be a dotted LAN IPv4 address") from exc
+    if (
+        addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_unspecified
+        or addr.is_reserved
+        or not any(addr in net for net in _LAN_V4)
+    ):
+        raise ValueError("Pixoo IP must be a private LAN address")
+    return str(addr)
 
 
 class PixooClient:
