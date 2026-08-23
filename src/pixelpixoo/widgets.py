@@ -23,8 +23,8 @@ from pixelpixoo.renderer import (
     hex_to_rgb,
     text_width,
 )
-from pixelpixoo.screens.bins import BinDue
 from pixelpixoo.screens.bins import (
+    BinDue,
     _parse_anchor,
     format_bin_lines,
     local_today,
@@ -80,7 +80,11 @@ def paint_tile(
     *,
     outline: bool = True,
 ) -> None:
-    """Paint one logical tile into rect. tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK, countdown, countdown:HOL, bins."""
+    """Paint one logical tile into rect.
+
+    Tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK,
+    countdown, countdown:HOL, bins.
+    """
     if outline and (rect[2] < 64 or rect[3] < 64):
         _pad(img, rect)
 
@@ -230,7 +234,7 @@ def _paint_weather(
     label_prefix = f"{label_raw} " if label_raw else ""
 
     def _top_line(day: date, low: float, high: float) -> str:
-        lo, hi = int(round(low)), int(round(high))
+        lo, hi = round(low), round(high)
         tiny = theme.use_tiny_font
         spacing = theme.spacing
         limit = rect[2] - 2
@@ -397,9 +401,9 @@ def _paint_sensibo(
     _line(img, rect, theme, label, CYAN, 0)
     bits: list[str] = []
     if show.show_temp and snap.temperature_c is not None:
-        bits.append(f"{int(round(snap.temperature_c))}°")
+        bits.append(f"{round(snap.temperature_c)}°")
     if show.show_humidity and snap.humidity is not None:
-        bits.append(f"{int(round(snap.humidity))} %")
+        bits.append(f"{round(snap.humidity)} %")
     if show.show_power:
         if snap.ac_on is True:
             bits.append("ON")

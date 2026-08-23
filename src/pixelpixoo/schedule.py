@@ -48,7 +48,8 @@ class ScheduleConfig:
     timezone: str = "UTC"
     # When enabled: only push during windows. Outside = screen off.
     windows: list[ScheduleWindow] = field(default_factory=list)
-    # What to do outside windows: off = blank/turn off screen, pause = stop pushing but leave last frame
+    # What to do outside windows:
+    # off = blank/turn off screen, pause = stop pushing but leave last frame
     outside: str = "off"
     # Extra AND conditions while the dashboard would otherwise be on.
     follow_sun: bool = False

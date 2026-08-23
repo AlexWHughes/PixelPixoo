@@ -178,9 +178,12 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 PYTHONPATH=src python -m pixelpixoo
+
+pytest          # run the test suite
+ruff check .    # lint
 ```
 
-Package layout lives under `src/pixelpixoo/`.
+Package layout lives under `src/pixelpixoo/`. CI (`.github/workflows/ci.yml`) lints with ruff and runs the tests on Python 3.11–3.13.
 
 To regenerate README sample frames:
 
@@ -190,7 +193,7 @@ PYTHONPATH=src python3 scripts/render_readme_assets.py
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep secrets (`PIXOO_IP`, API keys, `config.yaml`, `.env`) out of git, and match the existing style where you can.
+Issues and pull requests are welcome. Please keep secrets (`PIXOO_IP`, API keys, `config.yaml`, `.env`) out of git, match the existing style where you can (`ruff check .` must pass), and add tests for new logic (`pytest`).
 
 ## Credits
 

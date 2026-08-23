@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -111,7 +111,7 @@ def _sensibo() -> Image.Image:
 
 
 def _f1() -> Image.Image:
-    start = datetime.now(timezone.utc) + timedelta(days=2, hours=4)
+    start = datetime.now(UTC) + timedelta(days=2, hours=4)
     race = NextRace(
         race_name="Australian Grand Prix",
         circuit="Albert Park",
@@ -130,7 +130,7 @@ def _f1() -> Image.Image:
 
 
 def _countdown() -> Image.Image:
-    at = (datetime.now(timezone.utc) + timedelta(days=126)).replace(
+    at = (datetime.now(UTC) + timedelta(days=126)).replace(
         hour=13, minute=0, second=0, microsecond=0
     )
     screen = CountdownScreen(

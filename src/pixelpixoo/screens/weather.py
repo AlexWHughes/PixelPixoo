@@ -80,7 +80,7 @@ def _parse_payload(data: dict) -> WeatherData:
     for i, day_str in enumerate(dates):
         rain = None
         if i < len(rains) and rains[i] is not None:
-            rain = int(round(float(rains[i])))
+            rain = round(float(rains[i]))
         forecast.append(
             DayForecast(
                 day=date.fromisoformat(str(day_str)[:10]),
@@ -176,9 +176,8 @@ def _weekday(d: date) -> str:
 
 def _ordinal(day: int) -> str:
     if 10 <= day % 100 <= 20:
-        suffix = "th"
-    else:
-        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return f"{day}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
     return f"{day}{suffix}"
 
 
@@ -288,7 +287,7 @@ class WeatherScreen(BaseScreen):
         if self.cfg.show_current:
             if t.text_scale in ("normal", "large") and not self.cfg.show_forecast:
                 _draw_icon(img, data.weather_code, 4, t.header_h + 4)
-                temp = f"{int(round(data.temperature))}°"
+                temp = f"{round(data.temperature)}°"
                 scale = fit_scale(temp, 34, prefer=t.hero, tiny=t.use_tiny_font)
                 draw_text(
                     img,
@@ -309,7 +308,7 @@ class WeatherScreen(BaseScreen):
                     spacing=t.spacing,
                     tiny=t.use_tiny_font,
                 )
-                hi_lo = f"H{int(round(data.high))} L{int(round(data.low))}"
+                hi_lo = f"H{round(data.high)} L{round(data.low)}"
                 draw_centered(
                     img,
                     hi_lo,
@@ -320,7 +319,7 @@ class WeatherScreen(BaseScreen):
                 )
                 return img
 
-            temp = f"{int(round(data.temperature))}° {_code_short(data.weather_code)}"
+            temp = f"{round(data.temperature)}° {_code_short(data.weather_code)}"
             draw_text(
                 img,
                 temp,
@@ -332,7 +331,7 @@ class WeatherScreen(BaseScreen):
                 tiny=t.use_tiny_font,
             )
             y += t.hero_h + t.line_gap
-            hi_lo = f"H{int(round(data.high))} L{int(round(data.low))}"
+            hi_lo = f"H{round(data.high)} L{round(data.low)}"
             draw_text(
                 img,
                 hi_lo,
@@ -362,7 +361,7 @@ class WeatherScreen(BaseScreen):
             for day in days[:max_rows]:
                 row = (
                     f"{_weekday(day.day)} "
-                    f"{int(round(day.high))}/{int(round(day.low))} "
+                    f"{round(day.high)}/{round(day.low)} "
                     f"{_code_short(day.weather_code)}"
                 )
                 draw_text(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from PIL import Image
@@ -90,10 +90,7 @@ def race_title(name: str, max_len: int = 12) -> str:
     raw = " ".join(raw.split())
     base = raw.replace("GRAND PRIX", " ").replace(" GP", " ").replace("GP", " ")
     base = " ".join(base.split()).strip()
-    if not base:
-        title = "GP"
-    else:
-        title = f"{base} GP"
+    title = "GP" if not base else f"{base} GP"
     if len(title) <= max_len:
         return title
     # Keep the GP suffix; truncate the place name
@@ -147,7 +144,7 @@ def _fetch(client: httpx.Client) -> NextRace:
 
 
 def _countdown(start: datetime) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     seconds = (start - now).total_seconds()
     return format_remaining(seconds, zero_label="LIVE", pad_hours=False)
 
@@ -168,7 +165,7 @@ def _when_time(start: datetime) -> str:
 
 def filter_sessions(race: NextRace, cfg: F1Config) -> list[SessionEvent]:
     allowed = {s for s in cfg.sessions if s in F1_SESSION_IDS}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     upcoming = [
         s for s in race.sessions if s.session_id in allowed and s.start >= now
     ]

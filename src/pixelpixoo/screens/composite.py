@@ -94,7 +94,7 @@ class CompositeScreen(BaseScreen):
     ) -> None:
         borders = self.view.show_borders
         draw = ImageDraw.Draw(img)
-        for rect, tile in zip(rects, tiles):
+        for rect, tile in zip(rects, tiles, strict=False):
             paint_tile(
                 img, rect, tile, self.cfg, theme, self._client, outline=borders
             )

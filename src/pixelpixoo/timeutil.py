@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pixelpixoo.renderer import GREEN, ORANGE, PURPLE, RED
 
@@ -14,7 +14,7 @@ def parse_iso_datetime(value: str) -> datetime:
         text = text[:-1] + "+00:00"
     dt = datetime.fromisoformat(text)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -65,9 +65,9 @@ def format_remaining_pair(delta_seconds: float) -> tuple[str, str]:
 
 
 def remaining_seconds(target: datetime, *, now: datetime | None = None) -> float:
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     return (target - current).total_seconds()
 
 
