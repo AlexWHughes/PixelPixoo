@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -44,6 +43,7 @@ from pixelpixoo.screens.weather import (
     _code_label,
     _day_label,
     draw_tiny_rain_cloud,
+    upcoming_forecast_days,
 )
 from pixelpixoo.screens.weather import _fetch as _fetch_weather
 from pixelpixoo.theme import Theme
@@ -58,7 +58,7 @@ from pixelpixoo.timeutil import (
 
 logger = logging.getLogger(__name__)
 
-WEATHER_PAGE_SECONDS = 8.0
+_weather_paint_seq = 0
 
 
 def _traffic_timezone(cfg: AppConfig) -> str:
@@ -267,9 +267,11 @@ def _paint_weather(
             )
         )
     if cfg.weather.show_forecast and data.forecast:
-        for day in data.forecast:
-            if cfg.weather.show_current and day.day == today:
-                continue
+        for day in upcoming_forecast_days(
+            data.forecast,
+            today,
+            show_current=cfg.weather.show_current,
+        ):
             pages.append(
                 (
                     _top_line(day.day, day.low, day.high),
@@ -281,7 +283,9 @@ def _paint_weather(
         _line(img, rect, theme, "NO WX", DIM, 0)
         return
 
-    idx = int(time.time() // WEATHER_PAGE_SECONDS) % len(pages)
+    global _weather_paint_seq
+    _weather_paint_seq += 1
+    idx = (_weather_paint_seq - 1) % len(pages)
     top, cond, rain = pages[idx]
 
     x, y, w, h = rect

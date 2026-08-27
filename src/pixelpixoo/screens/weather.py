@@ -68,6 +68,34 @@ def _cache_key(cfg: WeatherConfig) -> str:
     )
 
 
+def _daily_rain_chance(
+    means: list[float | int | None],
+    maxes: list[float | int | None],
+    index: int,
+) -> int | None:
+    """Prefer daily mean POP; fall back to max when mean is unavailable."""
+    if index < len(means) and means[index] is not None:
+        return round(float(means[index]))
+    if index < len(maxes) and maxes[index] is not None:
+        return round(float(maxes[index]))
+    return None
+
+
+def upcoming_forecast_days(
+    forecast: list[DayForecast],
+    today: date,
+    *,
+    show_current: bool,
+) -> list[DayForecast]:
+    """Upcoming daily rows — skip today when current conditions are shown."""
+    days = [d for d in forecast if not show_current or d.day > today]
+    if days:
+        return days
+    if len(forecast) > 1:
+        return forecast[1:]
+    return forecast
+
+
 def _parse_payload(data: dict) -> WeatherData:
     current = data["current"]
     daily = data["daily"]
@@ -76,11 +104,10 @@ def _parse_payload(data: dict) -> WeatherData:
     highs = daily.get("temperature_2m_max") or []
     lows = daily.get("temperature_2m_min") or []
     codes = daily.get("weather_code") or []
-    rains = daily.get("precipitation_probability_max") or []
+    rains_mean = daily.get("precipitation_probability_mean") or []
+    rains_max = daily.get("precipitation_probability_max") or []
     for i, day_str in enumerate(dates):
-        rain = None
-        if i < len(rains) and rains[i] is not None:
-            rain = round(float(rains[i]))
+        rain = _daily_rain_chance(rains_mean, rains_max, i)
         forecast.append(
             DayForecast(
                 day=date.fromisoformat(str(day_str)[:10]),
@@ -115,7 +142,7 @@ def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
         "current": "temperature_2m,weather_code",
         "daily": (
             "temperature_2m_max,temperature_2m_min,weather_code,"
-            "precipitation_probability_max"
+            "precipitation_probability_mean,precipitation_probability_max"
         ),
         "timezone": cfg.timezone,
         "forecast_days": days,
@@ -344,18 +371,15 @@ class WeatherScreen(BaseScreen):
             y += t.body_h + t.line_gap + 1
 
         if self.cfg.show_forecast and data.forecast:
-            # Skip today if we already showed current; show upcoming days
             try:
                 today = datetime.now(ZoneInfo(self.cfg.timezone)).date()
             except Exception:
                 today = datetime.now().date()
-            days = [
-                d
-                for d in data.forecast
-                if not self.cfg.show_current or d.day > today
-            ]
-            if not days:
-                days = data.forecast[1:] if len(data.forecast) > 1 else data.forecast
+            days = upcoming_forecast_days(
+                data.forecast,
+                today,
+                show_current=self.cfg.show_current,
+            )
             line_h = t.body_h + t.line_gap
             max_rows = max(1, (62 - y) // max(1, line_h))
             for day in days[:max_rows]:
