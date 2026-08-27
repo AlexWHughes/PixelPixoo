@@ -91,7 +91,11 @@ class CountdownScreen(BaseScreen):
             tiny=t.use_tiny_font,
             spacing=t.spacing,
         )
-        local_label = target.astimezone().strftime("%m/%d")
+        local_label = (
+            target.astimezone(self._now.tzinfo).strftime("%m/%d")
+            if self._now is not None and self._now.tzinfo is not None
+            else target.astimezone().strftime("%m/%d")
+        )
         draw_text(
             img,
             local_label,

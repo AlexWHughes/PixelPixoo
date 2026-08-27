@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -58,7 +59,15 @@ from pixelpixoo.timeutil import (
 
 logger = logging.getLogger(__name__)
 
+_weather_paint_lock = threading.Lock()
 _weather_paint_seq = 0
+
+
+def _next_weather_page_index(page_count: int) -> int:
+    global _weather_paint_seq
+    with _weather_paint_lock:
+        _weather_paint_seq += 1
+        return (_weather_paint_seq - 1) % page_count
 
 
 def _traffic_timezone(cfg: AppConfig) -> str:
@@ -283,9 +292,7 @@ def _paint_weather(
         _line(img, rect, theme, "NO WX", DIM, 0)
         return
 
-    global _weather_paint_seq
-    _weather_paint_seq += 1
-    idx = (_weather_paint_seq - 1) % len(pages)
+    idx = _next_weather_page_index(len(pages))
     top, cond, rain = pages[idx]
 
     x, y, w, h = rect

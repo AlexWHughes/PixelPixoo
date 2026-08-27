@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.13-blue" alt="Python 3.13" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
   <a href="docker-compose.yml"><img src="https://img.shields.io/badge/deploy-docker-2496ED" alt="Docker" /></a>
 </p>
@@ -67,7 +67,7 @@ Display path is LAN-only: the loop paints frames with Pillow, then POSTs them to
 
 ### Requirements
 
-- Docker (recommended), or Python **3.11+**
+- Docker (recommended), or Python **3.13**
 - A Pixoo 64 reachable on your LAN (for live push)
 - Optional: Google Maps + Sensibo API keys for those screens
 
@@ -183,7 +183,7 @@ pytest          # run the test suite
 ruff check .    # lint
 ```
 
-Package layout lives under `src/pixelpixoo/`. CI (`.github/workflows/ci.yml`) lints with ruff and runs the tests on Python 3.11–3.13.
+Package layout lives under `src/pixelpixoo/`. CI (`.github/workflows/ci.yml`) lints with ruff and runs the tests on Python 3.13.
 
 To regenerate README sample frames:
 

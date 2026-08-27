@@ -144,9 +144,8 @@ def save_yaml(data: dict[str, Any], path: Path | None = None) -> None:
 def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
     """UI-safe config view (secrets masked, never raw)."""
     env = read_env_file()
-    # Prefer live env, fall back to .env file
-    google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
-    sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
+    google = secret_value("GOOGLE_MAPS_API_KEY")
+    sensibo = secret_value("SENSIBO_API_KEY")
     preview = os.environ.get("PIXELPIXOO_PREVIEW") or env.get("PIXELPIXOO_PREVIEW", "")
 
     loaded = cfg or load_config()
@@ -298,9 +297,8 @@ def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str
     (GET ``/api/config/export``). Optional ``form_payload`` still builds a bundle
     without writing disk — used as a fallback.
     """
-    env = read_env_file()
-    google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
-    sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
+    google = secret_value("GOOGLE_MAPS_API_KEY")
+    sensibo = secret_value("SENSIBO_API_KEY")
 
     if form_payload and isinstance(form_payload, dict) and form_payload.get("pixoo_ip"):
         config = _export_config_from_form(form_payload, google=google, sensibo=sensibo)

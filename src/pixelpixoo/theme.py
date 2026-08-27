@@ -207,7 +207,10 @@ def row_pattern_rects(
     rects: list[tuple[int, int, int, int]] = []
     y = top
     for i, cols in enumerate(cleaned):
-        h = band if i < rows - 1 else 64 - y
+        if y >= 64:
+            break
+        remaining = 64 - y
+        h = min(band if i < rows - 1 else remaining, remaining)
         if h <= 0:
             break
         if cols == 1:

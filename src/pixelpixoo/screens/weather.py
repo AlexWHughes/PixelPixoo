@@ -91,9 +91,24 @@ def upcoming_forecast_days(
     days = [d for d in forecast if not show_current or d.day > today]
     if days:
         return days
+    if show_current:
+        return []
     if len(forecast) > 1:
         return forecast[1:]
     return forecast
+
+
+def _forecast_today(now: datetime, tz_name: str) -> date:
+    """Map an instant to a calendar date in the configured weather timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        if now.tzinfo is None:
+            return now.date()
+        return now.astimezone().date()
+    if now.tzinfo is None:
+        return now.replace(tzinfo=tz).date()
+    return now.astimezone(tz).date()
 
 
 def _parse_payload(data: dict) -> WeatherData:
@@ -372,10 +387,7 @@ class WeatherScreen(BaseScreen):
 
         if self.cfg.show_forecast and data.forecast:
             if now is not None:
-                try:
-                    today = now.astimezone(ZoneInfo(self.cfg.timezone)).date()
-                except Exception:
-                    today = now.date()
+                today = _forecast_today(now, self.cfg.timezone)
             else:
                 try:
                     today = datetime.now(ZoneInfo(self.cfg.timezone)).date()

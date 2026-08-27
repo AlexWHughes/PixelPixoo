@@ -132,6 +132,20 @@ class TestIsScheduleActive:
         assert is_schedule_active(cfg, now=early) is True
         assert is_schedule_active(cfg, now=midday) is False
 
+    def test_overnight_window_day_filter(self) -> None:
+        cfg = ScheduleConfig(
+            enabled=True,
+            timezone="UTC",
+            windows=[ScheduleWindow(days=[4], start="22:00", end="06:00")],  # Fri
+        )
+        utc = UTC
+        friday_late = datetime(2025, 6, 6, 23, 0, tzinfo=utc)
+        saturday_early = datetime(2025, 6, 7, 5, 0, tzinfo=utc)
+        saturday_midday = datetime(2025, 6, 7, 12, 0, tzinfo=utc)
+        assert is_schedule_active(cfg, now=friday_late) is True
+        assert is_schedule_active(cfg, now=saturday_early) is True
+        assert is_schedule_active(cfg, now=saturday_midday) is False
+
     def test_bad_window_fails_open(self) -> None:
         cfg = ScheduleConfig(
             enabled=True,

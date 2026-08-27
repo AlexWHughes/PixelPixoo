@@ -83,13 +83,13 @@ def test_push_image_happy_path_has_no_reset() -> None:
 
 def test_pic_id_wraps_at_limit() -> None:
     client = FlakyPixoo()
+    client.gif_failures_left = 0
     for _ in range(GIF_ID_LIMIT + 2):
         client.push_image(Image.new("RGB", (64, 64)))
     resets = [c for c, _ in client.calls if c == "Draw/ResetHttpGifId"]
-    assert len(resets) >= 1
-    # After a reset the counter restarts at 1 rather than growing unbounded.
+    assert len(resets) == 1
     last = client.calls[-1][1]["PicID"]
-    assert 1 <= last < GIF_ID_LIMIT
+    assert last == 3
 
 
 def test_push_image_resizes_foreign_sizes() -> None:

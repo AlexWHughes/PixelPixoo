@@ -119,9 +119,10 @@ class TestRowPatternRects:
 
 
 def test_min_band_height_enforced() -> None:
-    # Many rows must not collapse below the 8px floor.
+    # Many rows must not collapse below the 8px floor or exceed canvas height.
     rects = row_pattern_rects([1] * 20, header=False)
     assert all(h >= 8 for _, _, _, h in rects)
+    assert all(y + h <= 64 for _, y, _, h in rects)
 
 
 @pytest.mark.parametrize(

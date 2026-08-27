@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from pixelpixoo.screens.weather import (
     DayForecast,
     _daily_rain_chance,
+    _forecast_today,
     _parse_payload,
     upcoming_forecast_days,
 )
@@ -64,8 +66,26 @@ class TestUpcomingForecastDays:
         days = upcoming_forecast_days(forecast, TODAY, show_current=True)
         assert [d.day for d in days] == [TODAY + timedelta(days=1), TODAY + timedelta(days=2)]
 
+    def test_one_day_forecast_with_current_shows_no_rows(self) -> None:
+        forecast = self._days(1)
+        assert upcoming_forecast_days(forecast, TODAY, show_current=True) == []
+
     def test_includes_today_when_forecast_only(self) -> None:
         forecast = self._days(3)
         days = upcoming_forecast_days(forecast, TODAY, show_current=False)
         expected = [TODAY, TODAY + timedelta(days=1), TODAY + timedelta(days=2)]
         assert [d.day for d in days] == expected
+
+
+class TestForecastToday:
+    def test_naive_now_uses_configured_timezone(self) -> None:
+        now = datetime(2026, 8, 24, 14, 30)
+        assert _forecast_today(now, "Australia/Sydney") == date(2026, 8, 24)
+
+    def test_aware_now_converts_to_configured_timezone(self) -> None:
+        now = datetime(2026, 8, 24, 14, 30, tzinfo=ZoneInfo("UTC"))
+        assert _forecast_today(now, "Australia/Sydney") == date(2026, 8, 25)
+
+    def test_bad_timezone_falls_back_for_naive_now(self) -> None:
+        now = datetime(2026, 8, 24, 14, 30)
+        assert _forecast_today(now, "Not/A_Timezone") == date(2026, 8, 24)
