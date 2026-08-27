@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from PIL import Image
 
 from pixelpixoo.config import CountdownTarget
@@ -36,15 +38,22 @@ class CountdownScreen(BaseScreen):
     name = "countdown"
     error_label = "CD"
 
-    def __init__(self, target: CountdownTarget, theme: Theme | None = None) -> None:
+    def __init__(
+        self,
+        target: CountdownTarget,
+        theme: Theme | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> None:
         super().__init__(need_client=False)
         self.target = target
         self.theme = theme or theme_for("normal")
         self.name = f"countdown:{target.label}"
+        self._now = now
 
     def _render(self) -> Image.Image:
         target = parse_iso_datetime(self.target.at)
-        remaining = remaining_seconds(target)
+        remaining = remaining_seconds(target, now=self._now)
         primary, secondary = format_remaining_pair(remaining)
         accent = urgency_color(remaining, use_week_band=True)
 

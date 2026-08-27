@@ -78,8 +78,9 @@ def test_format_remaining_pair() -> None:
 
 class TestRemainingSeconds:
     def test_positive_delta(self) -> None:
-        target = datetime.now(UTC) + timedelta(minutes=90)
-        assert 89 * 60 < remaining_seconds(target) <= 90 * 60
+        now = datetime(2025, 3, 14, 15, 30, tzinfo=UTC)
+        target = now + timedelta(minutes=90)
+        assert remaining_seconds(target, now=now) == 5400
 
     def test_naive_now_treated_as_utc(self) -> None:
         target = datetime(2030, 1, 1, tzinfo=UTC)

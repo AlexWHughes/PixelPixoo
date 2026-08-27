@@ -299,7 +299,7 @@ class WeatherScreen(BaseScreen):
         data = _fetch(self.cfg, self._client)
         return self._paint(data)
 
-    def _paint(self, data: WeatherData) -> Image.Image:
+    def _paint(self, data: WeatherData, *, now: datetime | None = None) -> Image.Image:
         t = self.theme
         img = new_canvas(BLACK)
         draw_label_bar(
@@ -371,10 +371,16 @@ class WeatherScreen(BaseScreen):
             y += t.body_h + t.line_gap + 1
 
         if self.cfg.show_forecast and data.forecast:
-            try:
-                today = datetime.now(ZoneInfo(self.cfg.timezone)).date()
-            except Exception:
-                today = datetime.now().date()
+            if now is not None:
+                try:
+                    today = now.astimezone(ZoneInfo(self.cfg.timezone)).date()
+                except Exception:
+                    today = now.date()
+            else:
+                try:
+                    today = datetime.now(ZoneInfo(self.cfg.timezone)).date()
+                except Exception:
+                    today = datetime.now().date()
             days = upcoming_forecast_days(
                 data.forecast,
                 today,
