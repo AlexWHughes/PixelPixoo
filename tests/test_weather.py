@@ -67,4 +67,5 @@ class TestUpcomingForecastDays:
     def test_includes_today_when_forecast_only(self) -> None:
         forecast = self._days(3)
         days = upcoming_forecast_days(forecast, TODAY, show_current=False)
-        assert [d.day for d in days] == [TODAY, TODAY + timedelta(days=1), TODAY + timedelta(days=2)]
+        expected = [TODAY, TODAY + timedelta(days=1), TODAY + timedelta(days=2)]
+        assert [d.day for d in days] == expected
