@@ -177,6 +177,7 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+pip install --group dev .
 PYTHONPATH=src python -m pixelpixoo
 
 pytest          # run the test suite

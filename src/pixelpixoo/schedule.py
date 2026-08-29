@@ -147,9 +147,9 @@ def is_schedule_active(cfg: ScheduleConfig, now: datetime | None = None) -> bool
         for window in cfg.windows:
             start = _parse_hhmm(window.start)
             end = _parse_hhmm(window.end)
-            active_days = {weekday}
-            if start > end and clock <= end:
-                active_days.add((weekday - 1) % 7)
+            active_days = (
+                {(weekday - 1) % 7} if start > end and clock <= end else {weekday}
+            )
             if window.days and not active_days.intersection(window.days):
                 continue
             if start <= end:
