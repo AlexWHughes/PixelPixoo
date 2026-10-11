@@ -197,9 +197,10 @@ def local_today(timezone: str) -> date:
 
 
 __all__ = [
-    "BinDue",
     "LABEL_MAX",
     "WEEKDAYS_SHORT",
+    "BinDue",
+    "_parse_anchor",
     "format_bin_lines",
     "local_today",
     "next_due_for_stream",
@@ -207,5 +208,4 @@ __all__ = [
     "put_out_weekday",
     "upcoming_dues",
     "when_phrase",
-    "_parse_anchor",
 ]

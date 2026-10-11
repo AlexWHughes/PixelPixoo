@@ -1,0 +1,419 @@
+"""Weather screen via Open-Meteo (current + multi-day forecast)."""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+import httpx
+from PIL import Image, ImageDraw
+
+from pixelpixoo.cache import TtlCache
+from pixelpixoo.config import WeatherConfig
+from pixelpixoo.renderer import (
+    BLACK,
+    BLUE,
+    CYAN,
+    GRAY,
+    ORANGE,
+    WHITE,
+    YELLOW,
+    draw_centered,
+    draw_label_bar,
+    draw_text,
+    fit_scale,
+    new_canvas,
+    set_pixel,
+)
+from pixelpixoo.schedule import WEEKDAYS_LONG, WEEKDAYS_TITLE
+from pixelpixoo.screens.base import BaseScreen
+from pixelpixoo.theme import Theme, theme_for
+
+logger = logging.getLogger(__name__)
+
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+# Prefer cache within this window; after that refresh, but keep serving stale on errors.
+_WEATHER_TTL_SEC = 10 * 60
+
+
+@dataclass
+class DayForecast:
+    day: date
+    high: float
+    low: float
+    weather_code: int
+    rain_chance: int | None = None
+
+
+@dataclass
+class WeatherData:
+    temperature: float
+    weather_code: int
+    high: float
+    low: float
+    rain_chance: int | None = None
+    forecast: list[DayForecast] = field(default_factory=list)
+
+
+_weather_cache: TtlCache[WeatherData] = TtlCache()
+
+
+def _cache_key(cfg: WeatherConfig) -> str:
+    return (
+        f"{cfg.latitude:.4f}|{cfg.longitude:.4f}|"
+        f"{cfg.timezone}|{cfg.forecast_days}"
+    )
+
+
+def _daily_rain_chance(
+    means: list[float | int | None],
+    maxes: list[float | int | None],
+    index: int,
+) -> int | None:
+    """Prefer daily mean POP; fall back to max when mean is unavailable."""
+    if index < len(means) and means[index] is not None:
+        return round(float(means[index]))
+    if index < len(maxes) and maxes[index] is not None:
+        return round(float(maxes[index]))
+    return None
+
+
+def upcoming_forecast_days(
+    forecast: list[DayForecast],
+    today: date,
+    *,
+    show_current: bool,
+) -> list[DayForecast]:
+    """Upcoming daily rows — skip today when current conditions are shown."""
+    days = [d for d in forecast if not show_current or d.day > today]
+    if days:
+        return days
+    if show_current:
+        return []
+    if len(forecast) > 1:
+        return forecast[1:]
+    return forecast
+
+
+def _forecast_today(now: datetime, tz_name: str) -> date:
+    """Map an instant to a calendar date in the configured weather timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        if now.tzinfo is None:
+            return now.date()
+        return now.astimezone().date()
+    if now.tzinfo is None:
+        return now.replace(tzinfo=tz).date()
+    return now.astimezone(tz).date()
+
+
+def _parse_payload(data: dict) -> WeatherData:
+    current = data["current"]
+    daily = data["daily"]
+    forecast: list[DayForecast] = []
+    dates = daily.get("time") or []
+    highs = daily.get("temperature_2m_max") or []
+    lows = daily.get("temperature_2m_min") or []
+    codes = daily.get("weather_code") or []
+    rains_mean = daily.get("precipitation_probability_mean") or []
+    rains_max = daily.get("precipitation_probability_max") or []
+    for i, day_str in enumerate(dates):
+        rain = _daily_rain_chance(rains_mean, rains_max, i)
+        forecast.append(
+            DayForecast(
+                day=date.fromisoformat(str(day_str)[:10]),
+                high=float(highs[i]),
+                low=float(lows[i]),
+                weather_code=int(codes[i]) if i < len(codes) else 0,
+                rain_chance=rain,
+            )
+        )
+    today_rain = forecast[0].rain_chance if forecast else None
+    return WeatherData(
+        temperature=float(current["temperature_2m"]),
+        weather_code=int(current["weather_code"]),
+        high=float(highs[0]) if highs else float(current["temperature_2m"]),
+        low=float(lows[0]) if lows else float(current["temperature_2m"]),
+        rain_chance=today_rain,
+        forecast=forecast,
+    )
+
+
+def _fetch(cfg: WeatherConfig, client: httpx.Client) -> WeatherData:
+    key = _cache_key(cfg)
+    fresh = _weather_cache.get(key, _WEATHER_TTL_SEC)
+    if fresh is not None:
+        return fresh
+
+    entry = _weather_cache.get_entry(key)
+    days = max(1, min(7, cfg.forecast_days))
+    params = {
+        "latitude": cfg.latitude,
+        "longitude": cfg.longitude,
+        "current": "temperature_2m,weather_code",
+        "daily": (
+            "temperature_2m_max,temperature_2m_min,weather_code,"
+            "precipitation_probability_mean,precipitation_probability_max"
+        ),
+        "timezone": cfg.timezone,
+        "forecast_days": days,
+    }
+    try:
+        response = client.get(OPEN_METEO_URL, params=params)
+        response.raise_for_status()
+        weather = _parse_payload(response.json())
+    except Exception as exc:
+        if entry is not None:
+            age = int(time.monotonic() - entry[0])
+            logger.warning(
+                "Weather fetch failed (%s); using cached data (%ds old)",
+                exc,
+                age,
+            )
+            return entry[1]
+        raise
+
+    _weather_cache.set(key, weather)
+    return weather
+
+
+def _code_label(code: int) -> str:
+    if code == 0:
+        return "CLEAR"
+    if code in (1, 2):
+        return "FAIR"
+    if code == 3:
+        return "CLOUDY"
+    if code in (45, 48):
+        return "FOG"
+    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
+        return "RAIN"
+    if code in (71, 73, 75, 77, 85, 86):
+        return "SNOW"
+    if code in (95, 96, 99):
+        return "STORM"
+    return "CLOUDY"
+
+
+def _code_short(code: int) -> str:
+    label = _code_label(code)
+    return {
+        "CLEAR": "CLR",
+        "FAIR": "FAIR",
+        "CLOUDY": "CLD",
+        "FOG": "FOG",
+        "RAIN": "RAIN",
+        "SNOW": "SNOW",
+        "STORM": "STM",
+    }.get(label, "WX")
+
+
+def _weekday(d: date) -> str:
+    return d.strftime("%a").upper()[:2]
+
+
+def _ordinal(day: int) -> str:
+    if 10 <= day % 100 <= 20:
+        return f"{day}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
+
+
+# Back-compat aliases for widgets
+_WEEKDAYS = WEEKDAYS_LONG
+_WEEKDAYS_SHORT = WEEKDAYS_TITLE
+
+
+def _day_label(d: date, *, today: date | None = None, short: bool = False) -> str:
+    """Top-line date, e.g. Sat 25th."""
+    del today
+    name = WEEKDAYS_TITLE[d.weekday()] if short else WEEKDAYS_LONG[d.weekday()]
+    return f"{name} {_ordinal(d.day)}"
+
+
+def _draw_icon(img: Image.Image, code: int, ox: int, oy: int) -> None:
+    draw = ImageDraw.Draw(img)
+    if code == 0:
+        draw.ellipse([ox + 4, oy + 4, ox + 16, oy + 16], fill=YELLOW)
+        for dx, dy in ((10, 0), (10, 20), (0, 10), (20, 10), (3, 3), (17, 3), (3, 17), (17, 17)):
+            set_pixel(img, ox + dx, oy + dy, ORANGE)
+    elif code in (1, 2, 3):
+        draw.ellipse([ox + 2, oy + 2, ox + 12, oy + 12], fill=YELLOW)
+        draw.ellipse([ox + 6, oy + 8, ox + 20, oy + 18], fill=GRAY)
+        draw.ellipse([ox + 10, oy + 6, ox + 22, oy + 16], fill=(140, 140, 150))
+    elif code in (45, 48):
+        for y in range(oy + 4, oy + 18, 3):
+            for x in range(ox + 2, ox + 20, 2):
+                set_pixel(img, x, y, GRAY)
+    elif code in (71, 73, 75, 77, 85, 86):
+        for i, (x, y) in enumerate(
+            ((4, 4), (10, 2), (16, 5), (6, 10), (12, 12), (18, 9), (8, 16), (14, 18))
+        ):
+            color = WHITE if i % 2 == 0 else CYAN
+            set_pixel(img, ox + x, oy + y, color)
+            set_pixel(img, ox + x + 1, oy + y, color)
+    elif code in (95, 96, 99):
+        draw.ellipse([ox + 4, oy + 2, ox + 18, oy + 12], fill=GRAY)
+        draw.polygon(
+            [(ox + 10, oy + 10), (ox + 6, oy + 20), (ox + 12, oy + 14), (ox + 16, oy + 22)],
+            fill=YELLOW,
+        )
+    else:
+        draw.ellipse([ox + 4, oy + 2, ox + 18, oy + 12], fill=GRAY)
+        for x in (ox + 6, ox + 10, ox + 14):
+            draw.line([(x, oy + 14), (x - 1, oy + 20)], fill=BLUE)
+
+
+# 5×5 rain-cloud glyph (cloud + two drip pixels)
+_TINY_RAIN_CLOUD = (
+    ".##..",
+    "#####",
+    "#####",
+    ".#.#.",
+    ".#.#.",
+)
+
+
+def draw_tiny_rain_cloud(
+    img: Image.Image,
+    x: int,
+    y: int,
+    *,
+    cloud: tuple[int, int, int] = (160, 175, 190),
+    rain: tuple[int, int, int] = (70, 150, 255),
+) -> int:
+    """Draw a 5×5 rain cloud. Returns width consumed (5)."""
+    for row, bits in enumerate(_TINY_RAIN_CLOUD):
+        for col, bit in enumerate(bits):
+            if bit != "#":
+                continue
+            color = rain if row >= 3 else cloud
+            set_pixel(img, x + col, y + row, color)
+    return 5
+
+
+class WeatherScreen(BaseScreen):
+    name = "weather"
+    error_label = "WX"
+
+    def __init__(
+        self,
+        cfg: WeatherConfig,
+        client: httpx.Client | None = None,
+        theme: Theme | None = None,
+    ) -> None:
+        super().__init__(client, timeout=15.0)
+        self.cfg = cfg
+        self.theme = theme or theme_for("normal")
+
+    def _render(self) -> Image.Image:
+        data = _fetch(self.cfg, self._client)
+        return self._paint(data)
+
+    def _paint(self, data: WeatherData, *, now: datetime | None = None) -> Image.Image:
+        t = self.theme
+        img = new_canvas(BLACK)
+        draw_label_bar(
+            img,
+            self.cfg.label.upper(),
+            CYAN,
+            height=t.header_h,
+            tiny=t.use_tiny_font,
+        )
+        y = t.header_h + 2
+
+        if self.cfg.show_current:
+            if t.text_scale in ("normal", "large") and not self.cfg.show_forecast:
+                _draw_icon(img, data.weather_code, 4, t.header_h + 4)
+                temp = f"{round(data.temperature)}°"
+                scale = fit_scale(temp, 34, prefer=t.hero, tiny=t.use_tiny_font)
+                draw_text(
+                    img,
+                    temp,
+                    28,
+                    t.header_h + 6,
+                    WHITE,
+                    scale=scale,
+                    spacing=t.spacing,
+                    tiny=t.use_tiny_font,
+                )
+                draw_text(
+                    img,
+                    _code_label(data.weather_code),
+                    28,
+                    t.header_h + 6 + t.hero_h + t.line_gap,
+                    GRAY,
+                    spacing=t.spacing,
+                    tiny=t.use_tiny_font,
+                )
+                hi_lo = f"H{round(data.high)} L{round(data.low)}"
+                draw_centered(
+                    img,
+                    hi_lo,
+                    52,
+                    ORANGE,
+                    tiny=t.use_tiny_font,
+                    spacing=t.spacing,
+                )
+                return img
+
+            temp = f"{round(data.temperature)}° {_code_short(data.weather_code)}"
+            draw_text(
+                img,
+                temp,
+                2,
+                y,
+                WHITE,
+                scale=t.hero if t.text_scale != "tiny" else 1,
+                spacing=t.spacing,
+                tiny=t.use_tiny_font,
+            )
+            y += t.hero_h + t.line_gap
+            hi_lo = f"H{round(data.high)} L{round(data.low)}"
+            draw_text(
+                img,
+                hi_lo,
+                2,
+                y,
+                ORANGE,
+                spacing=t.spacing,
+                tiny=t.use_tiny_font,
+            )
+            y += t.body_h + t.line_gap + 1
+
+        if self.cfg.show_forecast and data.forecast:
+            if now is not None:
+                today = _forecast_today(now, self.cfg.timezone)
+            else:
+                try:
+                    today = datetime.now(ZoneInfo(self.cfg.timezone)).date()
+                except Exception:
+                    today = datetime.now().date()
+            days = upcoming_forecast_days(
+                data.forecast,
+                today,
+                show_current=self.cfg.show_current,
+            )
+            line_h = t.body_h + t.line_gap
+            max_rows = max(1, (62 - y) // max(1, line_h))
+            for day in days[:max_rows]:
+                row = (
+                    f"{_weekday(day.day)} "
+                    f"{round(day.high)}/{round(day.low)} "
+                    f"{_code_short(day.weather_code)}"
+                )
+                draw_text(
+                    img,
+                    row,
+                    2,
+                    y,
+                    WHITE,
+                    spacing=t.spacing,
+                    tiny=t.use_tiny_font,
+                )
+                y += line_h
+        return img

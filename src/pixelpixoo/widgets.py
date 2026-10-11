@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import time
+import threading
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -23,8 +23,8 @@ from pixelpixoo.renderer import (
     hex_to_rgb,
     text_width,
 )
-from pixelpixoo.screens.bins import BinDue
 from pixelpixoo.screens.bins import (
+    BinDue,
     _parse_anchor,
     format_bin_lines,
     local_today,
@@ -44,6 +44,7 @@ from pixelpixoo.screens.weather import (
     _code_label,
     _day_label,
     draw_tiny_rain_cloud,
+    upcoming_forecast_days,
 )
 from pixelpixoo.screens.weather import _fetch as _fetch_weather
 from pixelpixoo.theme import Theme
@@ -58,7 +59,15 @@ from pixelpixoo.timeutil import (
 
 logger = logging.getLogger(__name__)
 
-WEATHER_PAGE_SECONDS = 8.0
+_weather_paint_lock = threading.Lock()
+_weather_paint_seq = 0
+
+
+def _next_weather_page_index(page_count: int) -> int:
+    global _weather_paint_seq
+    with _weather_paint_lock:
+        _weather_paint_seq += 1
+        return (_weather_paint_seq - 1) % page_count
 
 
 def _traffic_timezone(cfg: AppConfig) -> str:
@@ -80,7 +89,11 @@ def paint_tile(
     *,
     outline: bool = True,
 ) -> None:
-    """Paint one logical tile into rect. tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK, countdown, countdown:HOL, bins."""
+    """Paint one logical tile into rect.
+
+    Tile examples: weather, f1, sensibo, sensibo:BED, traffic, traffic:WORK,
+    countdown, countdown:HOL, bins.
+    """
     if outline and (rect[2] < 64 or rect[3] < 64):
         _pad(img, rect)
 
@@ -230,7 +243,7 @@ def _paint_weather(
     label_prefix = f"{label_raw} " if label_raw else ""
 
     def _top_line(day: date, low: float, high: float) -> str:
-        lo, hi = int(round(low)), int(round(high))
+        lo, hi = round(low), round(high)
         tiny = theme.use_tiny_font
         spacing = theme.spacing
         limit = rect[2] - 2
@@ -263,9 +276,11 @@ def _paint_weather(
             )
         )
     if cfg.weather.show_forecast and data.forecast:
-        for day in data.forecast:
-            if cfg.weather.show_current and day.day == today:
-                continue
+        for day in upcoming_forecast_days(
+            data.forecast,
+            today,
+            show_current=cfg.weather.show_current,
+        ):
             pages.append(
                 (
                     _top_line(day.day, day.low, day.high),
@@ -277,7 +292,7 @@ def _paint_weather(
         _line(img, rect, theme, "NO WX", DIM, 0)
         return
 
-    idx = int(time.time() // WEATHER_PAGE_SECONDS) % len(pages)
+    idx = _next_weather_page_index(len(pages))
     top, cond, rain = pages[idx]
 
     x, y, w, h = rect
@@ -397,9 +412,9 @@ def _paint_sensibo(
     _line(img, rect, theme, label, CYAN, 0)
     bits: list[str] = []
     if show.show_temp and snap.temperature_c is not None:
-        bits.append(f"{int(round(snap.temperature_c))}°")
+        bits.append(f"{round(snap.temperature_c)}°")
     if show.show_humidity and snap.humidity is not None:
-        bits.append(f"{int(round(snap.humidity))} %")
+        bits.append(f"{round(snap.humidity)} %")
     if show.show_power:
         if snap.ac_on is True:
             bits.append("ON")

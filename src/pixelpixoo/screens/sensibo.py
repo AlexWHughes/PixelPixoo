@@ -382,7 +382,7 @@ class SensiboScreen(BaseScreen):
 
         if cfg.show_temp:
             if snap.temperature_c is not None:
-                temp = f"{int(round(snap.temperature_c))}°"
+                temp = f"{round(snap.temperature_c)}°"
                 scale = fit_scale(temp, 36, prefer=t.hero, tiny=t.use_tiny_font)
                 draw_text(
                     img,
@@ -409,7 +409,7 @@ class SensiboScreen(BaseScreen):
                 left_y += t.hero_h + t.line_gap
 
         if cfg.show_humidity and snap.humidity is not None:
-            hum = f"{int(round(snap.humidity))}%"
+            hum = f"{round(snap.humidity)}%"
             draw_text(
                 img, hum, 4, left_y, BLUE, spacing=t.spacing, tiny=t.use_tiny_font
             )

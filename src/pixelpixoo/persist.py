@@ -6,17 +6,17 @@ import logging
 import math
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from pixelpixoo.config import (
-    AppConfig,
     COUNTDOWN_LABEL_MAX,
     F1_SESSION_IDS,
     LABEL_MAX,
+    AppConfig,
     load_config,
 )
 from pixelpixoo.pixoo_client import require_lan_ipv4
@@ -53,6 +53,11 @@ def config_path() -> Path:
 
 def env_path() -> Path:
     return Path(os.environ.get("PIXELPIXOO_ENV", ".env"))
+
+
+def secret_value(name: str) -> str:
+    """Resolve a secret from the process env, falling back to .env on disk."""
+    return os.environ.get(name, "") or read_env_file().get(name, "")
 
 
 def mask_secret(value: str) -> str:
@@ -139,9 +144,8 @@ def save_yaml(data: dict[str, Any], path: Path | None = None) -> None:
 def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
     """UI-safe config view (secrets masked, never raw)."""
     env = read_env_file()
-    # Prefer live env, fall back to .env file
-    google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
-    sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
+    google = secret_value("GOOGLE_MAPS_API_KEY")
+    sensibo = secret_value("SENSIBO_API_KEY")
     preview = os.environ.get("PIXELPIXOO_PREVIEW") or env.get("PIXELPIXOO_PREVIEW", "")
 
     loaded = cfg or load_config()
@@ -189,15 +193,24 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
             if isinstance(d, dict)
         ]
 
+    sb = loaded.sensibo
+
+    w = loaded.weather
     weather_block = {
         "enabled": weather_enabled,
-        "latitude": loaded.weather.latitude if loaded.weather else weather_raw.get("latitude", -33.8688),
-        "longitude": loaded.weather.longitude if loaded.weather else weather_raw.get("longitude", 151.2093),
-        "label": loaded.weather.label if loaded.weather else weather_raw.get("label", "HOME"),
-        "timezone": loaded.weather.timezone if loaded.weather else weather_raw.get("timezone", DEFAULT_TZ),
-        "forecast_days": loaded.weather.forecast_days if loaded.weather else int(weather_raw.get("forecast_days", 1)),
-        "show_current": loaded.weather.show_current if loaded.weather else bool(weather_raw.get("show_current", True)),
-        "show_forecast": loaded.weather.show_forecast if loaded.weather else bool(weather_raw.get("show_forecast", False)),
+        "latitude": w.latitude if w else weather_raw.get("latitude", -33.8688),
+        "longitude": w.longitude if w else weather_raw.get("longitude", 151.2093),
+        "label": w.label if w else weather_raw.get("label", "HOME"),
+        "timezone": w.timezone if w else weather_raw.get("timezone", DEFAULT_TZ),
+        "forecast_days": (
+            w.forecast_days if w else int(weather_raw.get("forecast_days", 1))
+        ),
+        "show_current": (
+            w.show_current if w else bool(weather_raw.get("show_current", True))
+        ),
+        "show_forecast": (
+            w.show_forecast if w else bool(weather_raw.get("show_forecast", False))
+        ),
     }
 
     return {
@@ -237,12 +250,16 @@ def public_config_dict(cfg: AppConfig | None = None) -> dict[str, Any]:
             ),
             "devices": sensibo_devices,
             "auto_discover": len(sensibo_devices) == 0,
-            "show_temp": loaded.sensibo.show_temp if loaded.sensibo else bool(sensibo_raw.get("show_temp", True)),
-            "show_humidity": loaded.sensibo.show_humidity if loaded.sensibo else bool(sensibo_raw.get("show_humidity", True)),
-            "show_power": loaded.sensibo.show_power if loaded.sensibo else bool(sensibo_raw.get("show_power", True)),
-            "show_mode": loaded.sensibo.show_mode if loaded.sensibo else bool(sensibo_raw.get("show_mode", True)),
-            "show_target": loaded.sensibo.show_target if loaded.sensibo else bool(sensibo_raw.get("show_target", True)),
-            "show_room": loaded.sensibo.show_room if loaded.sensibo else bool(sensibo_raw.get("show_room", True)),
+            "show_temp": sb.show_temp if sb else bool(sensibo_raw.get("show_temp", True)),
+            "show_humidity": (
+                sb.show_humidity if sb else bool(sensibo_raw.get("show_humidity", True))
+            ),
+            "show_power": sb.show_power if sb else bool(sensibo_raw.get("show_power", True)),
+            "show_mode": sb.show_mode if sb else bool(sensibo_raw.get("show_mode", True)),
+            "show_target": (
+                sb.show_target if sb else bool(sensibo_raw.get("show_target", True))
+            ),
+            "show_room": sb.show_room if sb else bool(sensibo_raw.get("show_room", True)),
         },
         "sensibo_api_key_set": bool(sensibo),
         "sensibo_api_key_hint": mask_secret(sensibo),
@@ -280,9 +297,8 @@ def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str
     (GET ``/api/config/export``). Optional ``form_payload`` still builds a bundle
     without writing disk — used as a fallback.
     """
-    env = read_env_file()
-    google = os.environ.get("GOOGLE_MAPS_API_KEY") or env.get("GOOGLE_MAPS_API_KEY", "")
-    sensibo = os.environ.get("SENSIBO_API_KEY") or env.get("SENSIBO_API_KEY", "")
+    google = secret_value("GOOGLE_MAPS_API_KEY")
+    sensibo = secret_value("SENSIBO_API_KEY")
 
     if form_payload and isinstance(form_payload, dict) and form_payload.get("pixoo_ip"):
         config = _export_config_from_form(form_payload, google=google, sensibo=sensibo)
@@ -297,7 +313,7 @@ def export_config_bundle(form_payload: dict[str, Any] | None = None) -> dict[str
     bundle: dict[str, Any] = {
         "format": EXPORT_FORMAT,
         "version": EXPORT_VERSION,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_at": datetime.now(UTC).isoformat(),
         "config": config,
     }
     if yaml_snapshot is not None:
@@ -614,9 +630,8 @@ def _merge_yaml_into_config(config: dict[str, Any], yaml_data: dict[str, Any]) -
         "brightness",
         "pixoo_ip",
     ):
-        if key not in merged or merged[key] in (None, {}, []):
-            if key in yaml_data:
-                merged[key] = yaml_data[key]
+        if (key not in merged or merged[key] in (None, {}, [])) and key in yaml_data:
+            merged[key] = yaml_data[key]
     return merged
 
 

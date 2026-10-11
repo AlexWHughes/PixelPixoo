@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ from pixelpixoo.persist import (
     export_config_bundle,
     normalize_import_payload,
     public_config_dict,
+    secret_value,
 )
 from pixelpixoo.pixoo_client import require_lan_ipv4
 from pixelpixoo.runtime import runtime
@@ -86,7 +86,7 @@ def _export_response(form_payload: dict[str, Any] | None) -> Response:
         bundle = export_config_bundle(form_payload)
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     body = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
     return Response(
         content=body,
@@ -164,7 +164,7 @@ def preview_screen(
 
 @app.get("/api/previews")
 def list_previews(scale: int = Query(4, ge=1, le=16)) -> dict[str, Any]:
-    """Render all screens; returns names + base64 is too heavy — use status names + per-screen URLs."""
+    """List screens; per-screen PNGs come from /api/preview/{name}."""
     status = runtime.status_dict()
     names = status.get("screen_names") or []
     return {
@@ -176,7 +176,8 @@ def list_previews(scale: int = Query(4, ge=1, le=16)) -> dict[str, Any]:
 
 @app.get("/api/sensibo/discover")
 def sensibo_discover() -> dict[str, Any]:
-    api_key = os.environ.get("SENSIBO_API_KEY", "")
+    # Same resolution as config loading: process env first, then .env on disk.
+    api_key = secret_value("SENSIBO_API_KEY")
     if not api_key:
         raise HTTPException(400, "SENSIBO_API_KEY not configured")
     try:

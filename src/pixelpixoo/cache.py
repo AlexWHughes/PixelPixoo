@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
 
 
-class TtlCache(Generic[T]):
+class TtlCache[T]:
     """In-memory cache keyed by string with monotonic TTL."""
 
     def __init__(self) -> None:

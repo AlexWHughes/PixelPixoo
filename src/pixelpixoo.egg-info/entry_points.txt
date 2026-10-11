@@ -1,0 +1,2 @@
+[console_scripts]
+pixelpixoo = pixelpixoo.__main__:main

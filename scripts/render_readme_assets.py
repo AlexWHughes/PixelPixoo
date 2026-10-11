@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
@@ -36,13 +37,16 @@ BG = (11, 13, 16)
 ACCENT = (61, 224, 198)
 LABEL = (232, 238, 246)
 
+# Fixed sample instant for deterministic README assets (Australia/Sydney).
+SAMPLE_NOW = datetime(2026, 8, 24, 14, 30, tzinfo=ZoneInfo("Australia/Sydney"))
+
 
 def _upscale(img: Image.Image) -> Image.Image:
     return img.resize((64 * SCALE, 64 * SCALE), Image.Resampling.NEAREST)
 
 
 def _weather() -> Image.Image:
-    today = date.today()
+    today = SAMPLE_NOW.date()
     data = WeatherData(
         temperature=22.4,
         weather_code=2,
@@ -69,7 +73,7 @@ def _weather() -> Image.Image:
         ),
         theme=theme_for("normal"),
     )
-    return screen._paint(data)
+    return screen._paint(data, now=SAMPLE_NOW)
 
 
 def _traffic() -> Image.Image:
@@ -111,7 +115,8 @@ def _sensibo() -> Image.Image:
 
 
 def _f1() -> Image.Image:
-    start = datetime.now(timezone.utc) + timedelta(days=2, hours=4)
+    sample_utc = SAMPLE_NOW.astimezone(UTC)
+    start = sample_utc + timedelta(days=2, hours=4)
     race = NextRace(
         race_name="Australian Grand Prix",
         circuit="Albert Park",
@@ -130,12 +135,13 @@ def _f1() -> Image.Image:
 
 
 def _countdown() -> Image.Image:
-    at = (datetime.now(timezone.utc) + timedelta(days=126)).replace(
+    at = (SAMPLE_NOW.astimezone(UTC) + timedelta(days=126)).replace(
         hour=13, minute=0, second=0, microsecond=0
     )
     screen = CountdownScreen(
         CountdownTarget(label="HOLIDAY", at=at.isoformat()),
         theme=theme_for("normal"),
+        now=SAMPLE_NOW.astimezone(UTC),
     )
     return screen._render()
 

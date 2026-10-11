@@ -48,7 +48,8 @@ class ScheduleConfig:
     timezone: str = "UTC"
     # When enabled: only push during windows. Outside = screen off.
     windows: list[ScheduleWindow] = field(default_factory=list)
-    # What to do outside windows: off = blank/turn off screen, pause = stop pushing but leave last frame
+    # What to do outside windows:
+    # off = blank/turn off screen, pause = stop pushing but leave last frame
     outside: str = "off"
     # Extra AND conditions while the dashboard would otherwise be on.
     follow_sun: bool = False
@@ -144,10 +145,13 @@ def is_schedule_active(cfg: ScheduleConfig, now: datetime | None = None) -> bool
 
     try:
         for window in cfg.windows:
-            if window.days and weekday not in window.days:
-                continue
             start = _parse_hhmm(window.start)
             end = _parse_hhmm(window.end)
+            active_days = (
+                {(weekday - 1) % 7} if start > end and clock <= end else {weekday}
+            )
+            if window.days and not active_days.intersection(window.days):
+                continue
             if start <= end:
                 if start <= clock <= end:
                     return True

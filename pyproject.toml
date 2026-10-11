@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Divoom Pixoo 64 push-loop dashboard with web UI"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
   "httpx>=0.28.1",
   "Pillow>=12.3.0",
@@ -20,5 +20,45 @@ dependencies = [
 [project.scripts]
 pixelpixoo = "pixelpixoo.__main__:main"
 
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.8",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "scripts"]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # import order
+  "UP",  # modernize
+  "B",   # bugbear
+  "SIM", # simplify
+  "RUF", # ruff-specific
+]
+ignore = [
+  "RUF001", # strings contain intentional unicode glyphs ("°", "→")
+  "RUF002", # docstrings use typographic unicode ("64×64")
+  "RUF003", # comments ditto
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Body", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"] # path setup must precede package imports
+"tests/*" = ["SIM117"]

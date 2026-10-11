@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.13-blue" alt="Python 3.13" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
   <a href="docker-compose.yml"><img src="https://img.shields.io/badge/deploy-docker-2496ED" alt="Docker" /></a>
 </p>
@@ -67,7 +67,7 @@ Display path is LAN-only: the loop paints frames with Pillow, then POSTs them to
 
 ### Requirements
 
-- Docker (recommended), or Python **3.11+**
+- Docker (recommended), or Python **3.13**
 - A Pixoo 64 reachable on your LAN (for live push)
 - Optional: Google Maps + Sensibo API keys for those screens
 
@@ -177,10 +177,14 @@ Base URL: the web UI host (e.g. `http://localhost:8787`). OpenAPI: `/api/docs`.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+pip install --group dev .
 PYTHONPATH=src python -m pixelpixoo
+
+pytest          # run the test suite
+ruff check .    # lint
 ```
 
-Package layout lives under `src/pixelpixoo/`.
+Package layout lives under `src/pixelpixoo/`. CI (`.github/workflows/ci.yml`) lints with ruff and runs the tests on Python 3.13.
 
 To regenerate README sample frames:
 
@@ -190,7 +194,7 @@ PYTHONPATH=src python3 scripts/render_readme_assets.py
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep secrets (`PIXOO_IP`, API keys, `config.yaml`, `.env`) out of git, and match the existing style where you can.
+Issues and pull requests are welcome. Please keep secrets (`PIXOO_IP`, API keys, `config.yaml`, `.env`) out of git, match the existing style where you can (`ruff check .` must pass), and add tests for new logic (`pytest`).
 
 ## Credits
 

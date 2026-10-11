@@ -115,10 +115,11 @@ def _fetch_route(
         raise RuntimeError(f"Directions status={status}: {payload.get('error_message')}")
     leg = payload["routes"][0]["legs"][0]
     duration = int(leg["duration"]["value"])
-    if "duration_in_traffic" in leg:
-        traffic = int(leg["duration_in_traffic"]["value"])
-    else:
-        traffic = duration
+    traffic = (
+        int(leg["duration_in_traffic"]["value"])
+        if "duration_in_traffic" in leg
+        else duration
+    )
     summary = str(payload["routes"][0].get("summary", ""))
     traffic_min = max(1, round(traffic / 60))
     # Compare against prior samples only, then record this refresh

@@ -176,9 +176,9 @@ def _require(data: dict[str, Any], key: str) -> Any:
 
 def _secret(name: str) -> str:
     # Local import avoids a config ↔ persist cycle at module load.
-    from pixelpixoo.persist import read_env_file
+    from pixelpixoo.persist import secret_value
 
-    return os.environ.get(name, "") or read_env_file().get(name, "")
+    return secret_value(name)
 
 
 def _parse_row_pattern(raw: object) -> list[int]:

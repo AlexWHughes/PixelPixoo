@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -260,7 +261,7 @@ class PixelRuntime:
     def _loop(self) -> None:
         self._update_status(
             running=True,
-            started_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
             last_error=None,
         )
         http = httpx.Client(timeout=20.0)
@@ -293,11 +294,15 @@ class PixelRuntime:
                             except ValueError as exc:
                                 logger.error("Invalid Pixoo IP: %s", exc)
                                 self._update_status(last_error=str(exc))
-                        if pixoo is not None and not screen_was_off and cfg.schedule.outside == "off":
+                        outside_off = cfg.schedule.outside == "off"
+                        if pixoo is not None and not screen_was_off and outside_off:
                             try:
                                 pixoo.set_screen(False)
                                 screen_was_off = True
-                                logger.info("Display inactive (%s) — Pixoo screen off", decision.reason)
+                                logger.info(
+                                    "Display inactive (%s) — Pixoo screen off",
+                                    decision.reason,
+                                )
                             except Exception:
                                 logger.exception("Failed to turn Pixoo screen off")
                     self._interruptible_sleep(min(60.0, max(15.0, cfg.rotate_seconds)))
@@ -317,10 +322,8 @@ class PixelRuntime:
                     for screen in screens:
                         close = getattr(screen, "close", None)
                         if callable(close):
-                            try:
+                            with contextlib.suppress(Exception):
                                 close()
-                            except Exception:
-                                pass
                     if pixoo is not None:
                         pixoo.close()
                         pixoo = None
@@ -395,7 +398,7 @@ class PixelRuntime:
                         self._last_pushed = frame.copy()
                     self._update_status(
                         last_screen=name,
-                        last_push_at=datetime.now(timezone.utc).isoformat(),
+                        last_push_at=datetime.now(UTC).isoformat(),
                         pushes=self._status.pushes + 1,
                         last_error=None,
                     )
@@ -418,10 +421,8 @@ class PixelRuntime:
             for screen in screens:
                 close = getattr(screen, "close", None)
                 if callable(close):
-                    try:
+                    with contextlib.suppress(Exception):
                         close()
-                    except Exception:
-                        pass
             self._update_status(running=False, current_screen=None)
 
     def _push_crossfade(

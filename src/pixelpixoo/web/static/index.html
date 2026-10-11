@@ -76,7 +76,7 @@
           <div class="fields three">
             <label>
               <span>Pixoo IP</span>
-              <input name="pixoo_ip" required pattern="^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$" placeholder="192.168.1.100" title="Dotted LAN IPv4 address" />
+              <input name="pixoo_ip" required pattern="^(?:10\.(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){2}|172\.(?:1[6-9]|2\d|3[01])\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)|192\.168\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d))$" placeholder="192.168.1.100" title="Private LAN IPv4 (10.x, 172.16–31.x, or 192.168.x); server validates on save" />
             </label>
             <label>
               <span>Brightness <em id="brightnessVal">80</em></span>
